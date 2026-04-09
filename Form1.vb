@@ -235,6 +235,9 @@ Public Class Form1
 
 #Region "Form Events"
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        Me.DoubleBuffered = True
+        Me.SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.UserPaint Or ControlStyles.OptimizedDoubleBuffer, True)
+        Me.UpdateStyles()
         InitStarField()
         _state = GameState.Menu
         LoadHighScores()
@@ -366,6 +369,12 @@ Public Class Form1
     End Sub
 
     Private Sub Form1_MouseDown(sender As Object, e As MouseEventArgs) Handles MyBase.MouseDown
+        If _state = GameState.Playing Then
+            AdjustBallSpeed(1.12F)
+            PlaySFX(_sfxData(_sfxStyle)(10), 60)
+            SpawnParticles(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2, Color.FromArgb(255, 200, 50), 6)
+            Return
+        End If
         If _state <> GameState.Options Then Return
         Dim mx = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
         Dim my = CSng(e.Y) * LOGICAL_HEIGHT / ClientSize.Height
@@ -958,13 +967,10 @@ Public Class Form1
 
     Private Sub UpdateBalls()
         If _getReadyFrames > 0 Then Return
-        Dim activeCount As Integer = 0
-        Dim resetBallRequested As Boolean = False
+        Dim sm As Single = If(_speedBoost, 2.0F, 1.0F)
         For i = 0 To _balls.Count - 1
             Dim b = _balls(i)
             If Not b.Active Then Continue For
-            activeCount += 1
-            Dim sm As Single = If(_speedBoost, 2.0F, 1.0F)
             b.X += b.DX * sm
             b.Y += b.DY * sm
             If b.X - _ballRadius <= 0 Then
@@ -987,34 +993,22 @@ Public Class Form1
                 SpawnParticles(b.X, b.Y, Color.White, 12)
                 _combo = 0 : _comboTimer = 0
                 _balls(i) = b
-                activeCount -= 1
-                If activeCount <= 0 Then
-                    _lives -= 1
-                    PlayBallLost()
-                    _screenShake = 10
-                    If _lives <= 0 Then
-                        If _score > _highScore Then _highScore = _score
-                        _nameInput = ""
-                        _highScoreSaved = False
-                        _pendingHighScore = True
-                        _highScoreDelayFrames = 60
-                        _state = GameState.Paused
-                    Else
-                        resetBallRequested = True
-                        Exit For
-                    End If
-                End If
                 Continue For
             End If
             Dim paddleRect As New RectangleF(_paddleX, LOGICAL_HEIGHT - PADDLE_Y_OFFSET - PADDLE_HEIGHT, _paddleWidth, PADDLE_HEIGHT)
             If b.DY > 0 AndAlso BallIntersectsRect(b, paddleRect) Then
                 b.Y = paddleRect.Top - _ballRadius - 1
-                Dim hitPos = (b.X - _paddleX) / _paddleWidth
+                Dim hitPos = Math.Max(0.05F, Math.Min(0.95F, (b.X - _paddleX) / _paddleWidth))
                 Dim ang = 150 - hitPos * 120
                 Dim rad = ang * Math.PI / 180.0
                 b.DX = CSng(-Math.Cos(rad) * b.Speed)
                 b.DY = CSng(-Math.Sin(rad) * b.Speed)
-                If Math.Abs(b.DY) < 1.5F Then b.DY = -1.5F
+                If Math.Abs(b.DY) < 2.0F Then
+                    b.DY = -2.0F
+                    Dim ratio = b.Speed / CSng(Math.Sqrt(b.DX * b.DX + b.DY * b.DY))
+                    b.DX *= ratio
+                    b.DY *= ratio
+                End If
                 PlayPaddleHit()
                 SpawnParticles(b.X, b.Y, Color.FromArgb(100, 200, 255), 4)
             End If
@@ -1049,9 +1043,22 @@ Public Class Form1
             Next
             _balls(i) = b
         Next
-        If resetBallRequested Then
-            ResetBall()
-        ElseIf activeCount > 0 Then
+        Dim totalActive = _balls.Where(Function(bl) bl.Active).Count()
+        If totalActive = 0 Then
+            _lives -= 1
+            PlayBallLost()
+            _screenShake = 10
+            If _lives <= 0 Then
+                If _score > _highScore Then _highScore = _score
+                _nameInput = ""
+                _highScoreSaved = False
+                _pendingHighScore = True
+                _highScoreDelayFrames = 60
+                _state = GameState.Paused
+            Else
+                ResetBall()
+            End If
+        Else
             _balls.RemoveAll(Function(bl) Not bl.Active)
         End If
     End Sub
