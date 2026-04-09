@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*.user
+publish/
+pipelines/exe/
+*.tmp
+*.log
