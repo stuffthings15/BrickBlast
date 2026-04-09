@@ -1312,7 +1312,7 @@ Public Class Form1
         Dim titleY = 140
         Using path As New GraphicsPath()
             Using ff As New FontFamily("Segoe UI")
-                path.AddString("CURTIS LOOP", ff, CInt(FontStyle.Bold), 48, New Point(0, 0), StringFormat.GenericDefault)
+                path.AddString("TEAM FAST TALK", ff, CInt(FontStyle.Bold), 48, New Point(0, 0), StringFormat.GenericDefault)
             End Using
             Dim bounds = path.GetBounds()
             Dim mat As New Matrix()
