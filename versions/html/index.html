@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
@@ -341,6 +341,12 @@ function updateTimers(){
 function updateStars(){for(let i=0;i<starY.length;i++){starY[i]+=starSpd[i];if(starY[i]>LH){starY[i]=0;starX[i]=Math.random()*LW}}}
 function checkComplete(){if(bricks.every(b=>!b.alive)){state=States.LevelComplete;playWin()}}
 
+function promptName(){
+ if(hsSaved)return;
+ if(isMobile||!document.hasFocus||typeof window.prompt==='function'){
+  const n=prompt('Enter your name (max 12 chars):','PLAYER');
+  if(n&&n.trim().length>0){nameInput=n.trim().toUpperCase().substring(0,12);addHS(nameInput,score);hsSaved=true}
+ }}
 function loadHS(){try{const d=localStorage.getItem('brickblast_hs');if(d){highScores=JSON.parse(d);if(highScores.length>0)highScore=highScores[0].s}}catch(e){}}
 function saveHS(){try{localStorage.setItem('brickblast_hs',JSON.stringify(highScores))}catch(e){}}
 function addHS(n,s){highScores.push({n,s});highScores.sort((a,b)=>b.s-a.s);highScores=highScores.slice(0,10);if(highScores.length>0)highScore=highScores[0].s;saveHS()}
@@ -388,7 +394,10 @@ function pollGamepad(){
   if(state===States.Menu){startGame();if(audioReady)startMusic()}
   else if(state===States.LevelComplete)nextLevel();
   else if(state===States.Paused&&!pendingHS)state=States.Playing;
-  else if(state===States.HighScore&&hsSaved){if(audioReady)startMusic();state=States.Menu}
+  if(state===States.HighScore){
+   if(!hsSaved&&nameInput.length===0){nameInput='PLAYER';addHS(nameInput,score);hsSaved=true}
+   else if(hsSaved){if(audioReady)startMusic();state=States.Menu}
+  }
   else if(state===States.Options&&(settingsSel===5||settingsSel===6))adjSetting(1);
  }
  // B/Circle/Y/Triangle = back/pause
@@ -454,7 +463,7 @@ function drawMenu(){
  centerText('Tap / Click / SPACE / \uD83C\uDFAE A to Start',332,'bold 18px Segoe UI,sans-serif','#fff');
  if(highScore>0)centerText('High Score: '+highScore,380,'14px Segoe UI,sans-serif','#ffdc64');
  centerText('\u2699  OPTIONS  \u2699',415,'bold 14px Segoe UI,sans-serif','#64c8ff');
- centerText('Arrows / WASD / Touch / Mouse / \uD83C\uDFAE Stick to move',455,'11px Segoe UI,sans-serif','#9696aa');
+ centerText('Arrows / A D / Touch / Mouse / \uD83C\uDFAE Stick to move',455,'11px Segoe UI,sans-serif','#9696aa');
  centerText('F / \uD83C\uDFAE RB = speed  |  P / \uD83C\uDFAE B = pause  |  \uD83C\uDFAE Start = options',485,'11px Segoe UI,sans-serif','#9696aa');
  centerText('Music: '+musicNames[musicStyle]+'  |  SFX: '+sfxNames[sfxStyle],515,'11px Segoe UI,sans-serif','#788cb4');
  centerText('Destroy bricks \u2022 Catch power-ups \u2022 Build combos!',545,'11px Segoe UI,sans-serif','#9696aa');
@@ -620,7 +629,9 @@ function handleClick(gx,gy){
  }
  if(state===States.LevelComplete){nextLevel();return}
  if(state===States.Paused&&!pendingHS){state=States.Playing;return}
- if(state===States.HighScore){if(hsSaved){if(audioReady)startMusic();state=States.Menu};return}
+ if(state===States.HighScore){
+  if(!hsSaved){promptName();return}
+  if(hsSaved){if(audioReady)startMusic();state=States.Menu};return}
  if(state===States.Options){
   const{px,py}=optXY();
   if(gx>=LW/2-60&&gx<=LW/2+60&&gy>=py+OPT_PH-70&&gy<=py+OPT_PH-38){state=prevState;return}
@@ -636,11 +647,12 @@ function handleClick(gx,gy){
   }
   return;
  }
- if(state===States.Playing){
-  if(gx>=LW-70&&gx<=LW-15&&gy>=55&&gy<=83){state=States.Paused;return}
-  if(gx>=15&&gx<=55&&gy>=55&&gy<=83){speedBoost=!speedBoost;playSFX(sfxData[sfxStyle][10],80);return}
+   if(state===States.Playing){
+    if(gx>=LW-70&&gx<=LW-15&&gy>=55&&gy<=83){state=States.Paused;return}
+    if(gx>=15&&gx<=55&&gy>=55&&gy<=83){speedBoost=!speedBoost;playSFX(sfxData[sfxStyle][10],80);return}
+    adjustSpeed(1.12);playSFX(sfxData[sfxStyle][10],60);spawnParticles(LW/2,LH/2,'#ffc832',6);
+   }
  }
-}
 
 // Keyboard
 document.addEventListener('keydown',e=>{
