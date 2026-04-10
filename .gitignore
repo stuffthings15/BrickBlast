@@ -8,3 +8,11 @@ pipelines/exe/
 *.log
 node_modules/
 mobile/node_modules/
+mobile/android/local.properties
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/capacitor-cordova-android-plugins/build/
+mobile/android/capacitor-cordova-android-plugins/.gradle/
+versions/windows/build/
+versions/windows/build-portable/
