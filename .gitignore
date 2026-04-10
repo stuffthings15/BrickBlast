@@ -18,3 +18,4 @@ versions/windows/build/
 versions/windows/build-portable/
 versions/windows/BrickBlast.exe
 mobile/ios/
+dist/
