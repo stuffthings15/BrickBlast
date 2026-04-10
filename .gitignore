@@ -6,3 +6,5 @@ publish/
 pipelines/exe/
 *.tmp
 *.log
+node_modules/
+mobile/node_modules/
