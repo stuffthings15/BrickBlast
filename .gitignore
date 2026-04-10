@@ -16,3 +16,4 @@ mobile/android/capacitor-cordova-android-plugins/build/
 mobile/android/capacitor-cordova-android-plugins/.gradle/
 versions/windows/build/
 versions/windows/build-portable/
+versions/windows/BrickBlast.exe

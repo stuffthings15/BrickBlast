@@ -6,4 +6,5 @@ echo   Team Fast Talk
 echo ============================================
 echo.
 echo Opening in your default browser...
-start "" "%~dp0..\..\web\index.html"
+cd /d "%~dp0"
+start "" "index.html"

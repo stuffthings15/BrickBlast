@@ -1,49 +1,23 @@
 # Brick Blast — iPhone (iOS) Version
 
-## How to Install (PWA — No Mac Required)
-The iPhone version runs as a **Progressive Web App** installed through Safari.
+This folder is fully self-contained. Zip it, host it, install as PWA.
 
-### Steps
-1. **Deploy** `web/index.html` to GitHub Pages or any HTTPS web server
-2. Open the URL on your **iPhone in Safari** (must be Safari, not Chrome)
-3. Tap the **Share button** (□↑) at the bottom of Safari
-4. Scroll down and tap **"Add to Home Screen"**
-5. Tap **"Add"** in the top-right corner
-6. The game now appears as an app icon on your home screen
-7. Launch it — it runs **full-screen** without browser UI
+## Contents
+- `index.html` — The complete game
+- `manifest.json` — PWA manifest for home screen install
+- `icons/` — App icons for home screen
+- `RUN_IPHONE.bat` — Quick test launcher (PC)
+- `README.md` — This file
 
-### GitHub Pages URL
-```
-https://stuffthings15.github.io/BrickBlast/web/
-```
+## How to Install on iPhone
+1. **Upload this entire folder** to any HTTPS web server (GitHub Pages, Netlify, etc.)
+2. Open the URL on your **iPhone in Safari** (must be Safari)
+3. Tap the **Share button** (□↑) at the bottom
+4. Tap **"Add to Home Screen"**
+5. Tap **"Add"** — game appears as an app icon
+6. Launch from home screen — runs **full-screen** without browser UI
 
-## Alternative: Capacitor iOS Build (Requires Mac + Xcode)
-If you need a native App Store build:
-1. On a Mac, install Xcode and Node.js
-2. Navigate to the `mobile/` folder
-3. Run:
-   ```bash
-   npx cap add ios
-   npx cap sync ios
-   npx cap open ios
-   ```
-4. Build and run from Xcode
-
-## Controls (Touch)
-| Input | Action |
-|-------|--------|
-| Touch + drag | Move paddle |
-| Tap | Start / Resume / Speed boost |
-| Two-finger tap | Toggle speed boost |
-| MFi controller | Full gamepad support |
-
-## iOS-Specific Features
-- `apple-mobile-web-app-capable` meta tag enables full-screen
-- `apple-mobile-web-app-status-bar-style` set to `black-translucent`
-- Touch events optimized with `touch-action: none`
-- `viewport-fit=cover` for edge-to-edge on notched iPhones
-
-## Platform
-- **Type:** PWA (Progressive Web App) via Safari
-- **Source:** `web/index.html`
-- **Min iOS:** 12.0+
+## Requirements
+- iPhone with iOS 12.0+
+- Safari browser (for PWA install)
+- HTTPS web server to host files
