@@ -1,22 +1,45 @@
-# Brick Blast — iPad Version
+# Brick Blast — iPad Native Version
 
-This folder is fully self-contained. Zip it, host it, install as PWA.
+This folder is fully self-contained with both native and PWA options.
 
 ## Contents
-- `index.html` — The complete game
-- `manifest.json` — PWA manifest for home screen install
-- `icons/` — App icons for home screen
-- `RUN_IPAD.bat` — Quick test launcher (PC)
+- `xcode-project/` — Complete Xcode project (native iOS app)
+- `BUILD_IOS.sh` — Automated build script (run on Mac)
+- `BUILD_IOS.bat` — Build instructions (Windows)
+- `index.html` — PWA version (fallback / web hosting)
+- `manifest.json` — PWA manifest
+- `icons/` — App icons
+- `RUN_IPAD.bat` — Launcher
 - `README.md` — This file
 
-## How to Install on iPad
-1. **Upload this entire folder** to any HTTPS web server
-2. Open the URL on your **iPad in Safari**
-3. Tap the **Share button** (□↑)
-4. Tap **"Add to Home Screen"**
-5. Tap **"Add"** — runs full-screen in landscape
+## Option 1: Native App via Xcode (Recommended)
+### Requirements
+- Mac with **Xcode 15+** installed
+- Free Apple Developer account (for device testing)
+- CocoaPods (`sudo gem install cocoapods`)
 
-## Requirements
-- iPad with iPadOS 13.0+
-- Safari browser (for PWA install)
-- HTTPS web server to host files
+### Steps
+1. Copy `xcode-project/` folder to a Mac
+2. Open Terminal in `xcode-project/App/`
+3. Run `pod install`
+4. Open `App.xcworkspace` in Xcode (NOT App.xcodeproj)
+5. Set your **Team** in Signing & Capabilities
+6. Select your iPad as the run target
+7. Press **⌘R** (Play) to build and install
+
+### Automated Build
+```bash
+chmod +x BUILD_IOS.sh
+./BUILD_IOS.sh
+```
+
+## Option 2: PWA Install (No Mac Required)
+1. Host `index.html` + `manifest.json` + `icons/` on HTTPS server
+2. Open URL in **Safari** on iPad
+3. Tap **Share → Add to Home Screen**
+
+## App Details
+- **Bundle ID:** `com.teamfasttalk.brickblast`
+- **Orientation:** All orientations (landscape recommended)
+- **Min iPadOS:** 13.0+
+- **Framework:** Capacitor 6 (Swift)
