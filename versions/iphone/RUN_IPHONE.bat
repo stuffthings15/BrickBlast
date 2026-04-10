@@ -5,18 +5,17 @@ echo   BRICK BLAST - iPhone (iOS) Version
 echo   Team Fast Talk
 echo ============================================
 echo.
-echo This folder contains all files for iPhone install.
+echo This folder has TWO install options:
 echo.
-echo HOW TO INSTALL:
-echo   1. Host this entire folder on any HTTPS web server
-echo      (GitHub Pages, Netlify, or any hosting)
-echo   2. Open the URL on your iPhone in Safari
-echo   3. Tap the Share button (box with arrow)
-echo   4. Tap "Add to Home Screen"
-echo   5. The game appears as a full-screen app!
+echo   OPTION 1: NATIVE APP (Xcode)
+echo     Run BUILD_IOS.bat for instructions, or
+echo     copy xcode-project/ to a Mac and build in Xcode.
 echo.
-echo QUICK TEST (on this PC):
-echo   Opening index.html in browser...
+echo   OPTION 2: PWA (no Mac needed)
+echo     Host index.html on an HTTPS server,
+echo     open in Safari, tap Share, Add to Home Screen.
+echo.
+echo Opening index.html for preview...
 cd /d "%~dp0"
 start "" "index.html"
 pause
