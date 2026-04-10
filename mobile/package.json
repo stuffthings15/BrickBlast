@@ -1,0 +1,31 @@
+{
+  "name": "brickblast-mobile",
+  "version": "1.0.0",
+  "description": "Brick Blast - Team Fast Talk mobile app",
+  "main": "index.js",
+  "scripts": {
+    "build:web": "node scripts/copy-web.js",
+    "cap:init": "npx cap init \"Brick Blast\" com.teamfasttalk.brickblast --web-dir www",
+    "cap:add:android": "npx cap add android",
+    "cap:add:ios": "npx cap add ios",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "build:android": "npm run build:web && npx cap sync android",
+    "build:ios": "npm run build:web && npx cap sync ios",
+    "setup": "npm install && npm run build:web && npx cap add android && npx cap add ios && npx cap sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "@capacitor/keyboard": "^6.0.0",
+    "@capacitor/screen-orientation": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0"
+  }
+}

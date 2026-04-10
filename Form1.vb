@@ -539,7 +539,7 @@ Public Class Form1
 
         Dim margin As Integer = 20
         Dim brickCols As Integer = BRICK_COLS
-        Dim brickRows As Integer = BRICK_ROWS
+        Dim brickRows As Integer = Math.Min(10, BRICK_ROWS + CInt(Math.Floor((_level - 1) / 3.0)))
         Dim brickW As Integer = CInt((LOGICAL_WIDTH - 2 * margin - (brickCols - 1) * BRICK_PADDING) / brickCols)
         Dim brickH As Integer = CInt(brickW * BRICK_HEIGHT / CDbl(BRICK_WIDTH))
         Dim brickLeft As Integer = margin
@@ -550,8 +550,35 @@ Public Class Form1
 
         Dim palette = If(_colorblindMode, _colorblindColors, _rowColors)
         _bricks.Clear()
+
+        Dim pattern = (_level - 1) Mod 8
+
         For row = 0 To brickRows - 1
             For col = 0 To brickCols - 1
+                Dim skip As Boolean = False
+                Select Case pattern
+                    Case 1 ' Checkerboard
+                        skip = ((row + col) Mod 2 = 1)
+                    Case 2 ' Diamond
+                        Dim cr = Math.Abs(row - brickRows / 2.0)
+                        Dim cc = Math.Abs(col - brickCols / 2.0)
+                        skip = (cr + cc > (brickRows + brickCols) / 4.0 + 1)
+                    Case 3 ' Fortress - hollow rectangle
+                        skip = (row > 1 AndAlso row < brickRows - 2 AndAlso col > 1 AndAlso col < brickCols - 2)
+                    Case 4 ' Horizontal stripes
+                        skip = (row Mod 3 = 1)
+                    Case 5 ' Cross pattern
+                        Dim midR = brickRows \ 2
+                        Dim midC = brickCols \ 2
+                        skip = Not (Math.Abs(row - midR) <= 1 OrElse Math.Abs(col - midC) <= 1)
+                    Case 6 ' Border only
+                        skip = (row > 0 AndAlso row < brickRows - 1 AndAlso col > 0 AndAlso col < brickCols - 1)
+                    Case 7 ' Random gaps
+                        skip = (_rng.Next(100) < 30)
+                End Select
+
+                If skip Then Continue For
+
                 Dim bk As Brick
                 bk.Rect = New RectangleF(
                     brickLeft + col * (brickW + BRICK_PADDING),
@@ -561,8 +588,16 @@ Public Class Form1
                 bk.Color1 = palette(ci)(0)
                 bk.Color2 = palette(ci)(1)
                 bk.Row = row
-                bk.HitsLeft = If(row < 2 AndAlso _level > 1, 2, 1)
                 bk.Points = (brickRows - row) * 10
+
+                ' Hit points scale with level
+                Dim hits = 1
+                If _level >= 2 AndAlso row < 2 Then hits = 2
+                If _level >= 4 AndAlso row < 4 Then hits = 2
+                If _level >= 6 Then hits = Math.Max(hits, If(row < 2, 3, 2))
+                If _level >= 9 Then hits = Math.Max(hits, If(row < 3, 3, 2))
+                If _level >= 12 Then hits = Math.Max(hits, If(row < 2, 4, 3))
+                bk.HitsLeft = hits
                 bk.Alive = True
                 _bricks.Add(bk)
             Next
@@ -1024,7 +1059,7 @@ Public Class Form1
                         SpawnParticles(bk.Rect.X + bk.Rect.Width / 2, bk.Rect.Y + bk.Rect.Height / 2, bk.Color1, PARTICLE_COUNT)
                         If _combo >= 2 Then PlayComboSound() Else PlayBrickHit()
                         _screenShake = 3
-                        If _rng.Next(100) < 54 Then
+                        If _rng.Next(100) < Math.Max(20, 54 - _level * 3) Then
                             SpawnPowerUp(bk.Rect.X + bk.Rect.Width / 2, bk.Rect.Y + bk.Rect.Height / 2)
                         End If
                     Else
@@ -1514,7 +1549,7 @@ Public Class Form1
             Using br As New SolidBrush(Color.FromArgb(200, pu.Color1.R, pu.Color1.G, pu.Color1.B))
                 g.FillEllipse(br, CSng(pu.X - POWERUP_SIZE / 2), CSng(cy - POWERUP_SIZE / 2), CSng(POWERUP_SIZE), CSng(POWERUP_SIZE))
             End Using
-            Using f As New Font("Segoe UI", 12, FontStyle.Bold)
+            Using f As New Font("Segoe UI", 18, FontStyle.Bold)
                 Dim ts = g.MeasureString(pu.Symbol, f)
                 Using br As New SolidBrush(Color.White)
                     g.DrawString(pu.Symbol, f, br, pu.X - ts.Width / 2, cy - ts.Height / 2)

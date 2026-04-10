@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Brick Blast</string>
+    <string name="title_activity_main">Brick Blast</string>
+    <string name="package_name">com.teamfasttalk.brickblast</string>
+    <string name="custom_url_scheme">com.teamfasttalk.brickblast</string>
+</resources>
