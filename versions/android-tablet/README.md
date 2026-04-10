@@ -1,33 +1,25 @@
 # Brick Blast — Android Tablet Version
 
-## How to Run
-The Android Tablet version uses the **same APK** as the phone version.
-The game automatically scales to fill any screen size.
+This folder is fully self-contained. Zip it and share.
 
-## Method 1: PWA Install (Easiest)
-1. Host `web/index.html` on a web server or GitHub Pages
-2. Open the URL on your Android tablet in **Chrome**
+## Contents
+- `BrickBlast-Android.apk` — Native Android app (same APK as phone, auto-scales)
+- `index.html` — PWA version (host on web server, install via Chrome)
+- `manifest.json` — PWA manifest
+- `RUN_ANDROID_TABLET.bat` — Info launcher
+- `README.md` — This file
+
+## Option 1: Install APK (Easiest)
+1. Transfer `BrickBlast-Android.apk` to your Android tablet
+2. Open the file to install
+3. Enable **"Unknown Sources"** in Settings if prompted
+4. Launch from app drawer — game auto-scales to tablet screen
+
+## Option 2: PWA Install (No APK)
+1. Host `index.html` + `manifest.json` on any HTTPS web server
+2. Open the URL on your tablet in **Chrome**
 3. Tap **⋮ menu → "Add to Home Screen"**
-4. Game installs as a full-screen landscape app
 
-## Method 2: Native APK
-See `versions/android-phone/README.md` for full APK build instructions.
-The same APK works on tablets — no changes needed.
-
-## Tablet-Specific Notes
-- The game renders at **1200×867 logical resolution** and scales to fit
-- Landscape orientation is recommended for best experience
-- Touch controls work the same as phone version
-- Bluetooth gamepad/keyboard fully supported
-
-## Controls
-| Input | Action |
-|-------|--------|
-| Touch + drag | Move paddle |
-| Tap | Start / Resume |
-| Bluetooth keyboard | Full keyboard controls |
-| Bluetooth gamepad | Full controller support |
-
-## Platform
-- **Type:** Capacitor-wrapped HTML5 / PWA
-- **Source:** `mobile/android/` + `web/index.html`
+## Requirements
+- Android 5.0+ (API 21)
+- Landscape orientation recommended

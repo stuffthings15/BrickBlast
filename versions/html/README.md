@@ -1,13 +1,15 @@
 # Brick Blast — HTML Browser Version
 
 ## How to Run
-**Double-click `RUN_HTML.bat`** to open the game in your default browser.
+**Double-click `RUN_HTML.bat`** or open `index.html` directly in any browser.
 
-### Alternative
-Open `web/index.html` directly in any modern browser.
+This folder is fully self-contained. Zip it and share — works on any device with a browser.
 
-### Hosted Version
-If deployed to GitHub Pages, visit: `https://stuffthings15.github.io/BrickBlast/web/`
+## Contents
+- `index.html` — The complete game (single file)
+- `manifest.json` — PWA manifest for "Add to Home Screen" install
+- `RUN_HTML.bat` — Shortcut to open in browser
+- `README.md` — This file
 
 ## Requirements
 - Any modern browser (Chrome, Firefox, Edge, Safari)

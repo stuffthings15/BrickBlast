@@ -1,15 +1,18 @@
 # Brick Blast — Windows Desktop Version
 
 ## How to Run
-**Double-click `RUN_WINDOWS.bat`** to build and launch the game.
+**Double-click `RUN_WINDOWS.bat`** or run `BrickBlast.exe` directly.
 
-### Alternative: Run from Visual Studio
-1. Open `anime finder.sln` in Visual Studio
-2. Press **F5** to build and run
+This folder is fully self-contained. Zip it and share — no install required.
+
+## Contents
+- `BrickBlast.exe` — Self-contained executable (no .NET install needed)
+- `RUN_WINDOWS.bat` — Shortcut to launch the game
+- `README.md` — This file
 
 ## Requirements
-- Windows 10 or later
-- .NET 8.0 SDK or later (or Visual Studio 2022+)
+- Windows 10 or later (64-bit)
+- No additional software needed — .NET runtime is bundled in the EXE
 
 ## Controls
 | Key | Action |
@@ -24,3 +27,10 @@
 ## Platform
 - **Type:** Native Windows Forms (VB.NET)
 - **Source:** `Form1.vb` in project root
+
+## Build EXE Yourself
+If `BrickBlast.exe` is not present, build it from the project root:
+```
+dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o versions\windows
+```
+Then rename `anime finder.exe` to `BrickBlast.exe`.

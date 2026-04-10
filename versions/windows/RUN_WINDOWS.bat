@@ -5,17 +5,20 @@ echo   BRICK BLAST - Windows Desktop Version
 echo   Team Fast Talk
 echo ============================================
 echo.
-echo Building and launching...
-cd /d "%~dp0..\.."
-dotnet build -c Release -o "versions\windows\build" >nul 2>&1
-if exist "versions\windows\build\anime finder.exe" (
-    start "" "versions\windows\build\anime finder.exe"
+cd /d "%~dp0"
+if exist "BrickBlast.exe" (
+    echo Launching BrickBlast.exe...
+    start "" "BrickBlast.exe"
 ) else (
-    echo Build failed. Trying pre-built version...
-    if exist "publish\anime finder.exe" (
-        start "" "publish\anime finder.exe"
+    echo BrickBlast.exe not found. Building from source...
+    cd /d "%~dp0..\.."
+    dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o "versions\windows" >nul 2>&1
+    cd /d "%~dp0"
+    if exist "anime finder.exe" (
+        rename "anime finder.exe" "BrickBlast.exe" >nul 2>&1
+        start "" "BrickBlast.exe"
     ) else (
-        echo ERROR: No executable found. Open the .sln in Visual Studio and build.
+        echo ERROR: Build failed. Install .NET SDK and try again.
         pause
     )
 )

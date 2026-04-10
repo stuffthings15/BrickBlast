@@ -1,23 +1,24 @@
 @echo off
-title Brick Blast - Android Phone Build
+title Brick Blast - Android Phone
 echo ============================================
 echo   BRICK BLAST - Android Phone Version
 echo   Team Fast Talk
 echo ============================================
 echo.
-echo Option 1: Install PWA (Easiest)
-echo   - Open web/index.html on your Android phone's browser
-echo   - Tap the browser menu (3 dots) then "Add to Home Screen"
-echo   - The game installs as a full-screen app
+echo This folder contains:
+echo   - BrickBlast-Android.apk  (install on Android phone)
+echo   - index.html              (PWA alternative)
 echo.
-echo Option 2: Build Android APK (Requires Android Studio)
-echo   Opening the Android project folder...
+echo OPTION 1: Install APK
+echo   Transfer BrickBlast-Android.apk to your Android phone
+echo   Open it to install (enable "Unknown Sources" in Settings)
 echo.
-start "" "%~dp0..\..\mobile\android"
+echo OPTION 2: PWA Install (no APK needed)
+echo   Host index.html on any web server
+echo   Open in Chrome on your phone
+echo   Tap menu (3 dots) then "Add to Home Screen"
 echo.
-echo To build the APK:
-echo   1. Open the "mobile\android" folder in Android Studio
-echo   2. Click Build ^> Build Bundle(s) / APK(s) ^> Build APK(s)
-echo   3. Transfer the APK to your Android phone and install
-echo.
+echo Opening folder...
+cd /d "%~dp0"
+start "" "."
 pause

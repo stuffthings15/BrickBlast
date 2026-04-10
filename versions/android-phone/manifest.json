@@ -1,0 +1,11 @@
+{
+  "name": "Brick Blast - Team Fast Talk",
+  "short_name": "Brick Blast",
+  "description": "2D Brick Breaker arcade game by Team Fast Talk",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000014",
+  "theme_color": "#000014",
+  "icons": []
+}
