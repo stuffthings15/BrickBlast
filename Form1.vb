@@ -1,3 +1,11 @@
+' =============================================================================
+' CURTIS LOOP: BRICK BLAST — WinForms Version
+' Team Fast Talk | CS-120 | .NET 10 | GDI+ Rendering
+'
+' Single-file arcade brick-breaker with procedural audio, 7 power-ups,
+' 10 music styles, 5 SFX packs, combo scoring, and colorblind mode.
+' All assets generated at runtime — zero external files.
+' =============================================================================
 Imports System.Drawing.Drawing2D
 Imports System.Runtime.InteropServices
 Imports System.IO
