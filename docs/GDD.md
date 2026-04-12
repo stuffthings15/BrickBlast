@@ -5,8 +5,8 @@
 **Team:** Team Fast Talk  
 **Course:** CS-120  
 **Platform:** Windows (Desktop)  
-**Engine:** VB.NET Windows Forms (GDI+ rendering)  
-**Version:** 1.0  
+**Engine:** VB.NET Windows Forms (GDI+) + WPF (DrawingContext)  
+**Version:** 1.1
 
 ---
 
@@ -240,8 +240,9 @@ Organized into `#Region` blocks:
 - [x] Submission zip created (~45 MB)
 - [x] GDD written (this document)
 - [x] Project documentation and folder structure
-- [ ] Git repository initialized and pushed to GitHub
-- **Deliverable:** Final submission package
+- [x] Git repository initialized and pushed to GitHub
+- [x] WPF port completed
+- **Deliverable:** Final multi-platform submission package
 
 ---
 

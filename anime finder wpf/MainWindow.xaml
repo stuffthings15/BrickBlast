@@ -1,0 +1,16 @@
+<Window x:Class="BrickBlastWPF.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BrickBlastWPF"
+        Title="Curtis Loop Brick Blast - WPF"
+        Width="1516" Height="1122"
+        MinWidth="656" MinHeight="519"
+        Background="#0F0F1E"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        Loaded="Window_Loaded"
+        SizeChanged="Window_SizeChanged">
+    <Grid>
+        <local:GameCanvas x:Name="Game" Focusable="True"/>
+    </Grid>
+</Window>
