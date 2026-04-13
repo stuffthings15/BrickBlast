@@ -225,6 +225,13 @@ Public Class Form1
         "BrickBlast", "highscores.json")
     Private _getReadyFrames As Integer = 0
     Private _sprites As New Dictionary(Of String, Bitmap)
+    ' Cached fonts — created once in Form1_Load, disposed in Form1_FormClosing
+    Private _fnt8b As Font, _fnt10b As Font, _fnt10r As Font
+    Private _fnt11b As Font, _fnt11r As Font, _fnt12b As Font, _fnt12r As Font
+    Private _fnt13b As Font, _fnt14b As Font, _fnt14r As Font
+    Private _fnt16r As Font, _fnt18r As Font, _fnt18b As Font
+    Private _fnt20b As Font, _fnt22b As Font, _fnt30b As Font, _fnt12c As Font
+    Private _brShadow As SolidBrush
 
     Private _colorblindColors As Color()() = {
         New Color() {Color.FromArgb(0, 114, 178), Color.FromArgb(60, 150, 210)},
@@ -272,6 +279,24 @@ Public Class Form1
         Me.SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.UserPaint Or ControlStyles.OptimizedDoubleBuffer, True)
         Me.UpdateStyles()
         LoadSprites()
+        _fnt8b = New Font("Segoe UI", 8, FontStyle.Bold)
+        _fnt10b = New Font("Segoe UI", 10, FontStyle.Bold)
+        _fnt10r = New Font("Segoe UI", 10, FontStyle.Regular)
+        _fnt11b = New Font("Segoe UI", 11, FontStyle.Bold)
+        _fnt11r = New Font("Segoe UI", 11, FontStyle.Regular)
+        _fnt12b = New Font("Segoe UI", 12, FontStyle.Bold)
+        _fnt12r = New Font("Segoe UI", 12, FontStyle.Regular)
+        _fnt13b = New Font("Segoe UI", 13, FontStyle.Bold)
+        _fnt14b = New Font("Segoe UI", 14, FontStyle.Bold)
+        _fnt14r = New Font("Segoe UI", 14, FontStyle.Regular)
+        _fnt16r = New Font("Segoe UI", 16, FontStyle.Regular)
+        _fnt18r = New Font("Segoe UI", 18, FontStyle.Regular)
+        _fnt18b = New Font("Segoe UI", 18, FontStyle.Bold)
+        _fnt20b = New Font("Segoe UI", 20, FontStyle.Bold)
+        _fnt22b = New Font("Segoe UI", 22, FontStyle.Bold)
+        _fnt30b = New Font("Segoe UI", 30, FontStyle.Bold)
+        _fnt12c = New Font("Consolas", 12, FontStyle.Regular)
+        _brShadow = New SolidBrush(Color.FromArgb(180, 0, 0, 0))
         InitStarField()
         _state = GameState.Menu
         LoadHighScores()
@@ -286,6 +311,12 @@ Public Class Form1
     End Sub
 
     Private Sub Form1_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
+        For Each fnt As Font In {_fnt8b, _fnt10b, _fnt10r, _fnt11b, _fnt11r, _fnt12b, _fnt12r,
+                                  _fnt13b, _fnt14b, _fnt14r, _fnt16r, _fnt18r, _fnt18b,
+                                  _fnt20b, _fnt22b, _fnt30b, _fnt12c}
+            If fnt IsNot Nothing Then Try : fnt.Dispose() : Catch : End Try
+        Next
+        If _brShadow IsNot Nothing Then _brShadow.Dispose()
         DisposeSprites()
         CleanupMusic()
         If _appMutex IsNot Nothing Then
@@ -296,6 +327,12 @@ Public Class Form1
     End Sub
 
     Private Sub Form1_KeyDown(sender As Object, e As KeyEventArgs) Handles MyBase.KeyDown
+        ' Alt+Enter toggles maximize; Alt+F4 passes through to system
+        If e.Alt AndAlso e.KeyCode = Keys.Return Then
+            Me.WindowState = If(Me.WindowState = FormWindowState.Maximized, FormWindowState.Normal, FormWindowState.Maximized)
+            e.Handled = True
+            Return
+        End If
         If _pendingHighScore Then
             Return
         End If
@@ -473,7 +510,7 @@ Public Class Form1
     Private Sub Form1_Paint(sender As Object, e As PaintEventArgs) Handles MyBase.Paint
         Dim g = e.Graphics
         g.SmoothingMode = SmoothingMode.AntiAlias
-        g.InterpolationMode = InterpolationMode.HighQualityBicubic
+        g.InterpolationMode = InterpolationMode.NearestNeighbor
 
         Dim scaleX = CSng(ClientSize.Width) / LOGICAL_WIDTH
         Dim scaleY = CSng(ClientSize.Height) / LOGICAL_HEIGHT
@@ -1704,23 +1741,45 @@ Public Class Form1
                 g.FillPath(br, path2)
             End Using
         End Using
-        Using f As New Font("Segoe UI", 18, FontStyle.Regular)
-            DrawCenteredText(g, "Press SPACE to Start", f, Color.White, 310)
-        End Using
-        If _highScore > 0 Then
-            Using f As New Font("Segoe UI", 14, FontStyle.Regular)
-                DrawCenteredText(g, $"High Score: {_highScore}", f, Color.FromArgb(255, 220, 100), 350)
-            End Using
+        Dim startSpr = TryGetSprite("ui/text_start")
+        Dim keySpc = TryGetSprite("ui/key_space")
+        If startSpr IsNot Nothing Then
+            g.DrawImage(startSpr, CInt((LOGICAL_WIDTH - 240) / 2), 304, 240, 40)
+        Else
+            DrawCenteredText(g, "Press SPACE to Start", _fnt18r, Color.White, 310)
         End If
-        Using f As New Font("Segoe UI", 14, FontStyle.Bold)
-            DrawCenteredText(g, ChrW(&H2699) & "  Press H or O for OPTIONS  " & ChrW(&H2699), f, Color.FromArgb(100, 200, 255), 385)
-        End Using
-        Using f As New Font("Segoe UI", 11, FontStyle.Regular)
-            DrawCenteredText(g, "ARROW KEYS to move  |  F speed boost  |  P pause", f, Color.FromArgb(150, 150, 170), 430)
-            DrawCenteredText(g, $"Music: {_musicStyleNames(_musicStyle)}  |  SFX: {_sfxStyleNames(_sfxStyle)}", f, Color.FromArgb(120, 140, 180), 460)
-            DrawCenteredText(g, $"Window: {_windowScaleNames(_windowScale)}", f, Color.FromArgb(120, 140, 180), 490)
-            DrawCenteredText(g, "Destroy bricks  " & ChrW(8226) & "  Catch power-ups  " & ChrW(8226) & "  Build combos!", f, Color.FromArgb(150, 150, 170), 520)
-        End Using
+        If keySpc IsNot Nothing Then g.DrawImage(keySpc, CInt(LOGICAL_WIDTH / 2 + 130), 308, 32, 32)
+        ' Mini leaderboard on front page
+        If _highScores.Count > 0 Then
+            Dim topN = Math.Min(3, _highScores.Count)
+            Dim panelH = 16 + topN * 20 + 8
+            Using pbr As New SolidBrush(Color.FromArgb(160, 0, 0, 30))
+                Using rr = RoundedRect(New RectangleF(LOGICAL_WIDTH / 2 - 200, 348, 400, panelH), 8)
+                    g.FillPath(pbr, rr)
+                End Using
+            End Using
+            DrawCenteredText(g, "BEST SCORES", _fnt10b, Color.FromArgb(255, 200, 100), 351)
+            Dim sy = 368.0F
+            For i = 0 To topN - 1
+                Dim rec = _highScores(i)
+                Dim nm = If(rec.PlayerName.Length > 10, rec.PlayerName.Substring(0, 10), rec.PlayerName.PadRight(10))
+                DrawCenteredText(g, $"{i + 1}. {nm}  {rec.PlayerScore:N0}", _fnt10r, Color.FromArgb(200, 200, 225), sy)
+                sy += 20
+            Next
+        ElseIf _highScore > 0 Then
+            DrawCenteredText(g, $"High Score: {_highScore}", _fnt14r, Color.FromArgb(255, 220, 100), 355)
+        End If
+        DrawCenteredText(g, ChrW(&H2699) & "  Press H or O for OPTIONS  " & ChrW(&H2699), _fnt14b, Color.FromArgb(100, 200, 255), 420)
+        Dim keyArr = TryGetSprite("ui/key_arrows")
+        Dim keyF = TryGetSprite("ui/key_f")
+        Dim keyP = TryGetSprite("ui/key_p")
+        If keyArr IsNot Nothing Then g.DrawImage(keyArr, CInt(LOGICAL_WIDTH / 2 - 290), 454, 24, 24)
+        If keyF IsNot Nothing Then g.DrawImage(keyF, CInt(LOGICAL_WIDTH / 2 - 30), 454, 24, 24)
+        If keyP IsNot Nothing Then g.DrawImage(keyP, CInt(LOGICAL_WIDTH / 2 + 130), 454, 24, 24)
+        DrawCenteredText(g, "ARROW KEYS to move  |  F speed boost  |  P pause", _fnt11r, Color.FromArgb(150, 150, 170), 458)
+        DrawCenteredText(g, $"Music: {_musicStyleNames(_musicStyle)}  |  SFX: {_sfxStyleNames(_sfxStyle)}", _fnt11r, Color.FromArgb(120, 140, 180), 488)
+        DrawCenteredText(g, $"Window: {_windowScaleNames(_windowScale)}", _fnt11r, Color.FromArgb(120, 140, 180), 518)
+        DrawCenteredText(g, "Destroy bricks  " & ChrW(8226) & "  Catch power-ups  " & ChrW(8226) & "  Build combos!", _fnt11r, Color.FromArgb(150, 150, 170), 548)
     End Sub
 
     Private Sub DrawGame(g As Graphics)
@@ -1735,7 +1794,7 @@ Public Class Form1
     End Sub
 
     Private Sub DrawHUD(g As Graphics)
-        Using f As New Font("Segoe UI", 13, FontStyle.Bold)
+        Dim f = _fnt13b
             ' Score with optional star icon
             Dim starSpr = TryGetSprite("ui/star")
             If starSpr IsNot Nothing Then
@@ -1781,7 +1840,6 @@ Public Class Form1
                     g.DrawString(pt, f, br, LOGICAL_WIDTH - psz.Width - 15, 32)
                 End Using
             End If
-        End Using
         Using pen As New Pen(Color.FromArgb(40, 100, 180, 255), 1)
             g.DrawLine(pen, 0, 50, LOGICAL_WIDTH, 50)
         End Using
@@ -1792,8 +1850,9 @@ Public Class Form1
             If Not bk.Alive Then Continue For
             Dim r = bk.Rect
             Dim isDamaged = bk.Color1.R >= 195 AndAlso bk.Color1.G >= 195 AndAlso bk.Color1.B >= 195
-            Dim sprKey = If(isDamaged, $"sprites/brick_{bk.Row Mod 7}_damaged", $"sprites/brick_{bk.Row Mod 7}")
+            Dim sprKey = If(isDamaged, $"sprites/brick_{bk.Row Mod 7}_damaged", If(bk.HitsLeft >= 3, "sprites/brick_gold", $"sprites/brick_{bk.Row Mod 7}"))
             Dim brickSpr = TryGetSprite(sprKey)
+            If brickSpr Is Nothing AndAlso bk.HitsLeft >= 3 Then brickSpr = TryGetSprite($"sprites/brick_{bk.Row Mod 7}")
             If brickSpr IsNot Nothing Then
                 g.DrawImage(brickSpr, r)
             Else
@@ -1815,18 +1874,14 @@ Public Class Form1
                 End Using
                 Dim sym = _colorblindSymbols(bk.Row Mod _colorblindSymbols.Length)
                 If bk.HitsLeft > 1 Then sym = bk.HitsLeft.ToString() & sym
-                Using f As New Font("Segoe UI", 10, FontStyle.Bold)
-                    Dim ts = g.MeasureString(sym, f)
-                    Using br As New SolidBrush(Color.White)
-                        g.DrawString(sym, f, br, r.X + (r.Width - ts.Width) / 2, r.Y + (r.Height - ts.Height) / 2)
-                    End Using
+                Dim ts = g.MeasureString(sym, _fnt10b)
+                Using br As New SolidBrush(Color.White)
+                    g.DrawString(sym, _fnt10b, br, r.X + (r.Width - ts.Width) / 2, r.Y + (r.Height - ts.Height) / 2)
                 End Using
             ElseIf bk.HitsLeft > 1 Then
-                Using f As New Font("Segoe UI", 8, FontStyle.Bold)
-                    Using br As New SolidBrush(Color.FromArgb(180, 0, 0, 0))
-                        Dim ts = g.MeasureString(bk.HitsLeft.ToString(), f)
-                        g.DrawString(bk.HitsLeft.ToString(), f, br, r.X + (r.Width - ts.Width) / 2, r.Y + (r.Height - ts.Height) / 2)
-                    End Using
+                Using br As New SolidBrush(Color.FromArgb(180, 0, 0, 0))
+                    Dim ts = g.MeasureString(bk.HitsLeft.ToString(), _fnt8b)
+                    g.DrawString(bk.HitsLeft.ToString(), _fnt8b, br, r.X + (r.Width - ts.Width) / 2, r.Y + (r.Height - ts.Height) / 2)
                 End Using
             End If
         Next
@@ -1840,8 +1895,13 @@ Public Class Form1
         Using br As New SolidBrush(Color.FromArgb(30, paddleC1))
             g.FillEllipse(br, _paddleX - 10, py + 5, _paddleWidth + 20, 20)
         End Using
-        Dim paddleKey = If(_paddleWidth > PADDLE_WIDTH, "sprites/paddle_wide", "sprites/paddle")
-        Dim paddleSpr = TryGetSprite(paddleKey)
+        Dim paddleSpr As Bitmap = Nothing
+        If _paddleWidth > PADDLE_WIDTH Then
+            paddleSpr = TryGetSprite("sprites/paddle_wide")
+        Else
+            paddleSpr = TryGetSprite("sprites/paddle_hd_blue")
+            If paddleSpr Is Nothing Then paddleSpr = TryGetSprite("sprites/paddle")
+        End If
         If paddleSpr IsNot Nothing Then
             g.DrawImage(paddleSpr, pr)
             If _colorblindMode Then
@@ -1947,17 +2007,25 @@ Public Class Form1
             Dim ca = Math.Max(0, Math.Min(255, CInt(_comboTimer * 5)))
             Dim ga = Math.Max(0, Math.Min(255, CInt(ca * 0.3)))
             Dim text = $"COMBO x{_combo}!"
-            Using f As New Font("Segoe UI", 20, FontStyle.Bold)
-                Dim sz = g.MeasureString(text, f)
-                Dim cx = (LOGICAL_WIDTH - sz.Width) / 2
-                Dim cy = LOGICAL_HEIGHT / 2.0F + 30
-                Using br As New SolidBrush(Color.FromArgb(ga, 255, 200, 50))
-                    g.DrawString(text, f, br, cx - 2, cy - 2)
-                    g.DrawString(text, f, br, cx + 2, cy + 2)
+            Dim f = _fnt20b
+            If f Is Nothing Then Return
+            Dim sz = g.MeasureString(text, f)
+            Dim cx = (LOGICAL_WIDTH - sz.Width) / 2
+            Dim cy = LOGICAL_HEIGHT / 2.0F + 30
+            ' Dark contrasting backdrop ensures combo is always readable
+            Using br As New SolidBrush(Color.FromArgb(Math.Min(210, ca), 0, 0, 20))
+                Using rr = RoundedRect(New RectangleF(cx - 18, cy - 8, sz.Width + 36, sz.Height + 16), 10)
+                    g.FillPath(br, rr)
                 End Using
-                Using br As New SolidBrush(Color.FromArgb(ca, 255, 240, 100))
-                    g.DrawString(text, f, br, cx, cy)
-                End Using
+            End Using
+            Dim gemSpr = TryGetSprite("ui/gem")
+            If gemSpr IsNot Nothing Then g.DrawImage(gemSpr, cx - 38, cy + 2, 28, 28)
+            Using br As New SolidBrush(Color.FromArgb(ga, 255, 200, 50))
+                g.DrawString(text, f, br, cx - 2, cy - 2)
+                g.DrawString(text, f, br, cx + 2, cy + 2)
+            End Using
+            Using br As New SolidBrush(Color.FromArgb(ca, 255, 240, 100))
+                g.DrawString(text, f, br, cx, cy)
             End Using
         End If
     End Sub
@@ -2017,9 +2085,12 @@ Public Class Form1
             Dim gs2 = 28
             g.DrawImage(gearSpr, CSng(LOGICAL_WIDTH / 2) - 118, y + 4, gs2, gs2)
         End If
-        Using ft As New Font("Segoe UI", 22, FontStyle.Bold)
-            DrawCenteredText(g, "OPTIONS", ft, Color.FromArgb(100, 200, 255), y)
-        End Using
+        Dim optSpr = TryGetSprite("ui/text_options")
+        If optSpr IsNot Nothing Then
+            g.DrawImage(optSpr, CInt((LOGICAL_WIDTH - 180) / 2) + 12, CInt(y + 4), 180, 30)
+        Else
+            DrawCenteredText(g, "OPTIONS", _fnt22b, Color.FromArgb(100, 200, 255), y)
+        End If
         y += 48
         Dim lx = px + 25
         Dim rx = CSng(px + pw / 2 + 10)
@@ -2092,11 +2163,15 @@ Public Class Form1
                     Using fv As New Font("Segoe UI", 10, FontStyle.Bold)
                         Select Case idx
                             Case 0
+                                Dim sndSpr = TryGetSprite(If(_sfxVolume > 0, "ui/sound_on", "ui/sound_off"))
+                                If sndSpr IsNot Nothing Then g.DrawImage(sndSpr, barX - 28, y, 22, 22)
                                 DrawVolumeBar(g, barX, y + 2, barW, barH, _sfxVolume, sc)
                                 Using brS As New SolidBrush(sc)
                                     g.DrawString($"{_sfxVolume}%", fv, brS, barX + barW + 10, y)
                                 End Using
                             Case 1
+                                Dim musSpr = TryGetSprite(If(_musicVolume > 0, "ui/music_on", "ui/music_off"))
+                                If musSpr IsNot Nothing Then g.DrawImage(musSpr, barX - 28, y, 22, 22)
                                 Dim ev = GetEffectiveMusicVolume()
                                 DrawVolumeBar(g, barX, y + 2, barW, barH, ev, sc)
                                 Using brS As New SolidBrush(sc)
@@ -2256,31 +2331,55 @@ Public Class Form1
                 DrawCenteredText(g, title, ft, titleColor, LOGICAL_HEIGHT / 2 - 60)
             End Using
         End If
-        Using fs As New Font("Segoe UI", 16, FontStyle.Regular)
-            DrawCenteredText(g, subtitle, fs, Color.FromArgb(200, 200, 220), LOGICAL_HEIGHT / 2 + 10)
-        End Using
+        Dim resumeSpr = If(subtitle.Contains("resume"), TryGetSprite("ui/text_resume"), Nothing)
+        If resumeSpr IsNot Nothing Then
+            g.DrawImage(resumeSpr, CInt((LOGICAL_WIDTH - 200) / 2), CInt(LOGICAL_HEIGHT / 2 + 8), 200, 36)
+        Else
+            DrawCenteredText(g, subtitle, _fnt16r, Color.FromArgb(200, 200, 220), LOGICAL_HEIGHT / 2 + 10)
+        End If
     End Sub
 
     Private Sub DrawCenteredText(g As Graphics, text As String, font As Font, color As Color, y As Single)
         Dim sz = g.MeasureString(text, font)
+        Dim x = (LOGICAL_WIDTH - sz.Width) / 2
+        If _brShadow IsNot Nothing Then g.DrawString(text, font, _brShadow, x + 1, y + 1)
         Using br As New SolidBrush(color)
-            g.DrawString(text, font, br, (LOGICAL_WIDTH - sz.Width) / 2, y)
+            g.DrawString(text, font, br, x, y)
+        End Using
+    End Sub
+
+    Private Sub DrawTextShadow(g As Graphics, text As String, font As Font, color As Color, x As Single, y As Single)
+        If _brShadow IsNot Nothing Then g.DrawString(text, font, _brShadow, x + 1, y + 1)
+        Using br As New SolidBrush(color)
+            g.DrawString(text, font, br, x, y)
         End Using
     End Sub
 
     Private Sub DrawVolumeBar(g As Graphics, x As Single, y As Single, w As Single, h As Single, value As Integer, barColor As Color)
-        Using br As New SolidBrush(Color.FromArgb(60, 255, 255, 255))
-            Using rr = RoundedRect(New RectangleF(x, y, w, h), 4)
-                g.FillPath(br, rr)
-            End Using
-        End Using
-        Dim fw = CSng(w * value / 100.0)
-        If fw > 2 Then
-            Using br As New SolidBrush(Color.FromArgb(200, barColor.R, barColor.G, barColor.B))
-                Using rr = RoundedRect(New RectangleF(x, y, fw, h), 4)
+        Dim trackSpr = TryGetSprite("ui/slider_track")
+        Dim handleSpr = TryGetSprite("ui/slider_handle")
+        If trackSpr IsNot Nothing Then
+            g.DrawImage(trackSpr, x, y, w, h)
+        Else
+            Using br As New SolidBrush(Color.FromArgb(60, 255, 255, 255))
+                Using rr = RoundedRect(New RectangleF(x, y, w, h), 4)
                     g.FillPath(br, rr)
                 End Using
             End Using
+        End If
+        If trackSpr Is Nothing Then
+            Dim fw = CSng(w * value / 100.0)
+            If fw > 2 Then
+                Using br As New SolidBrush(Color.FromArgb(200, barColor.R, barColor.G, barColor.B))
+                    Using rr = RoundedRect(New RectangleF(x, y, fw, h), 4)
+                        g.FillPath(br, rr)
+                    End Using
+                End Using
+            End If
+        End If
+        If handleSpr IsNot Nothing Then
+            Dim hx = x + CSng(w * Math.Max(0, Math.Min(100, value)) / 100.0) - h / 2
+            g.DrawImage(handleSpr, hx, y - 2, h + 4, h + 4)
         End If
     End Sub
 
