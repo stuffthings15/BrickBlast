@@ -243,6 +243,7 @@ Public Class GameCanvas
 #Region "Constructor"
         Public Sub New()
             Focusable = True
+            InitStarField()
             AddHandler Loaded, AddressOf OnLoaded
             AddHandler Unloaded, AddressOf OnUnloaded
         End Sub
@@ -254,7 +255,6 @@ Public Class GameCanvas
                 _hwnd = src.Handle
                 src.AddHook(New HwndSourceHook(AddressOf WndProc))
             End If
-            InitStarField()
             _state = GameState.Menu
             LoadHighScores()
             PreGenerateAllMusic()
