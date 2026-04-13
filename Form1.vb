@@ -321,6 +321,7 @@ Public Class Form1
         Me.SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.UserPaint Or ControlStyles.OptimizedDoubleBuffer, True)
         Me.UpdateStyles()
         LoadSprites()
+        GenerateProceduralSprites()
         _fnt8b = New Font("Segoe UI", 8, FontStyle.Bold)
         _fnt10b = New Font("Segoe UI", 10, FontStyle.Bold)
         _fnt10r = New Font("Segoe UI", 10, FontStyle.Regular)
@@ -819,7 +820,7 @@ Public Class Form1
                 523, 622, 784, 622, 523, 466, 392, 0, 466, 523, 622, 784, 622, 523, 466, 392,
                 262, 392, 523, 784, 622, 523, 392, 0, 311, 392, 466, 523, 622, 523, 466, 0,
                 262, 330, 392, 523, 659, 784, 659, 523, 294, 349, 440, 587, 698, 880, 698, 587,
-                523, 659, 784, 659, 523, 392, 262, 0,  587, 698, 880, 784, 659, 523, 349, 0,
+                523, 659, 784, 659, 523, 392, 262, 0, 587, 698, 880, 784, 659, 523, 349, 0,
                 262, 330, 392, 523, 784, 659, 523, 392, 294, 349, 440, 587, 880, 784, 698, 587}
                 durs = {
                 188, 188, 188, 375, 375, 375, 188, 375, 188, 188, 188, 375, 375, 375, 188, 375,
@@ -832,11 +833,11 @@ Public Class Form1
             Case 1 ' P2 — C/D heroic lyrical ascending (120 BPM, Q=500)
                 freqs = {
                 262, 392, 523, 659, 784, 659, 523, 392, 294, 440, 587, 698, 880, 784, 698, 587,
-                523, 659, 784, 880, 784, 659, 523, 0,  587, 784, 880, 784, 698, 587, 440, 0,
+                523, 659, 784, 880, 784, 659, 523, 0, 587, 784, 880, 784, 698, 587, 440, 0,
                 392, 523, 659, 784, 659, 523, 392, 262, 440, 587, 698, 880, 784, 698, 587, 440,
                 784, 880, 1047, 880, 784, 659, 523, 392, 880, 1047, 880, 784, 698, 587, 523, 440,
                 523, 659, 784, 880, 784, 659, 523, 392, 587, 698, 880, 784, 698, 587, 440, 349,
-                392, 523, 659, 784, 659, 523, 392, 0,  440, 587, 698, 880, 698, 587, 440, 0}
+                392, 523, 659, 784, 659, 523, 392, 0, 440, 587, 698, 880, 698, 587, 440, 0}
                 durs = {
                 250, 250, 500, 500, 500, 250, 250, 500, 250, 250, 500, 500, 500, 250, 250, 500,
                 500, 500, 500, 250, 250, 250, 500, 500, 500, 500, 500, 250, 250, 250, 500, 500,
@@ -852,7 +853,7 @@ Public Class Form1
                 262, 330, 392, 523, 659, 784, 659, 523, 294, 349, 440, 587, 698, 880, 784, 698,
                 523, 392, 262, 330, 392, 523, 659, 784, 587, 440, 349, 294, 440, 587, 698, 880,
                 784, 659, 523, 392, 262, 330, 262, 392, 880, 784, 698, 587, 440, 349, 294, 440,
-                659, 523, 392, 262, 330, 262, 330, 0,  784, 698, 587, 440, 349, 294, 0, 0}
+                659, 523, 392, 262, 330, 262, 330, 0, 784, 698, 587, 440, 349, 294, 0, 0}
                 durs = {
                 215, 215, 215, 430, 215, 215, 430, 215, 215, 215, 215, 430, 215, 215, 430, 215,
                 430, 215, 215, 215, 215, 215, 430, 215, 430, 215, 215, 215, 215, 215, 430, 215,
@@ -881,10 +882,10 @@ Public Class Form1
                 freqs = {
                 262, 330, 392, 523, 659, 523, 392, 262, 294, 349, 440, 587, 698, 587, 440, 294,
                 392, 523, 659, 784, 784, 659, 523, 392, 440, 587, 698, 880, 880, 784, 698, 587,
-                262, 392, 523, 659, 523, 392, 262, 0,  294, 440, 587, 698, 698, 587, 440, 0,
+                262, 392, 523, 659, 523, 392, 262, 0, 294, 440, 587, 698, 698, 587, 440, 0,
                 523, 659, 784, 880, 1047, 880, 784, 659, 587, 698, 880, 1047, 880, 784, 698, 587,
                 659, 523, 392, 262, 330, 262, 330, 392, 698, 587, 440, 294, 349, 294, 349, 440,
-                262, 330, 392, 523, 392, 330, 262, 0,  294, 349, 440, 587, 440, 349, 0, 0}
+                262, 330, 392, 523, 392, 330, 262, 0, 294, 349, 440, 587, 440, 349, 0, 0}
                 durs = {
                 200, 200, 200, 400, 400, 200, 200, 400, 200, 200, 200, 400, 400, 200, 200, 400,
                 200, 200, 400, 400, 200, 200, 200, 400, 200, 200, 400, 400, 200, 200, 200, 400,
@@ -895,10 +896,10 @@ Public Class Form1
 
             Case 5 ' P6 — C/D sweeping harp arpeggios (90 BPM, Q=667)
                 freqs = {
-                262, 330, 392, 523, 392, 330, 262, 0,  294, 349, 440, 587, 440, 349, 294, 0,
-                523, 659, 784, 880, 784, 659, 523, 0,  587, 698, 880, 784, 698, 587, 440, 0,
+                262, 330, 392, 523, 392, 330, 262, 0, 294, 349, 440, 587, 440, 349, 294, 0,
+                523, 659, 784, 880, 784, 659, 523, 0, 587, 698, 880, 784, 698, 587, 440, 0,
                 262, 330, 392, 523, 659, 523, 392, 330, 294, 349, 440, 587, 698, 587, 440, 349,
-                523, 784, 1047, 784, 523, 392, 262, 0,  587, 880, 1047, 880, 698, 587, 440, 0,
+                523, 784, 1047, 784, 523, 392, 262, 0, 587, 880, 1047, 880, 698, 587, 440, 0,
                 392, 523, 659, 784, 880, 784, 659, 523, 440, 587, 698, 880, 1047, 880, 784, 698,
                 262, 330, 392, 523, 659, 784, 659, 523, 294, 349, 440, 587, 698, 880, 698, 0}
                 durs = {
@@ -911,12 +912,12 @@ Public Class Form1
 
             Case 6 ' P7 — C/D fast energetic pop (140 BPM, Q=430)
                 freqs = {
-                523, 659, 784, 880, 784, 659, 523, 0,  587, 698, 880, 784, 698, 587, 440, 0,
+                523, 659, 784, 880, 784, 659, 523, 0, 587, 698, 880, 784, 698, 587, 440, 0,
                 784, 880, 1047, 880, 784, 659, 523, 392, 880, 1047, 880, 784, 698, 587, 440, 349,
                 523, 659, 784, 523, 659, 784, 880, 784, 587, 698, 880, 698, 784, 880, 1047, 880,
                 784, 659, 523, 392, 330, 392, 523, 659, 880, 784, 698, 587, 440, 440, 587, 698,
                 523, 784, 1047, 784, 523, 0, 523, 784, 587, 880, 1047, 880, 698, 0, 587, 880,
-                784, 659, 523, 392, 523, 392, 262, 0,  880, 784, 698, 587, 587, 440, 294, 0}
+                784, 659, 523, 392, 523, 392, 262, 0, 880, 784, 698, 587, 587, 440, 294, 0}
                 durs = {
                 215, 215, 430, 430, 215, 215, 430, 215, 215, 215, 430, 430, 215, 215, 430, 215,
                 215, 215, 430, 215, 215, 215, 215, 430, 215, 215, 430, 215, 215, 215, 215, 430,
@@ -948,7 +949,7 @@ Public Class Form1
                 659, 523, 392, 523, 659, 784, 659, 523, 784, 698, 587, 698, 784, 880, 784, 698,
                 880, 784, 659, 523, 392, 523, 392, 523, 1047, 880, 784, 698, 587, 698, 587, 698,
                 523, 659, 784, 880, 784, 659, 523, 392, 587, 698, 880, 1047, 880, 784, 698, 587,
-                659, 784, 880, 784, 659, 523, 392, 0,  784, 880, 1047, 880, 784, 698, 587, 0}
+                659, 784, 880, 784, 659, 523, 392, 0, 784, 880, 1047, 880, 784, 698, 587, 0}
                 durs = {
                 208, 208, 208, 208, 208, 208, 415, 208, 208, 208, 208, 208, 208, 208, 415, 208,
                 208, 208, 415, 208, 208, 208, 415, 208, 208, 208, 415, 208, 208, 208, 415, 208,
@@ -1371,7 +1372,7 @@ Public Class Form1
         End Try
     End Sub
 
-    Private Function GenerateHighScoreMidiBytes
+    Private Function GenerateHighScoreMidiBytes()
         Dim oldStyle = _musicStyle
         _musicStyle = 6
         Dim bytes = GenerateMidiBytes()
@@ -1531,6 +1532,85 @@ Public Class Form1
         Next
         _sprites.Clear()
     End Sub
+
+    Private Sub GenerateProceduralSprites()
+        If Not _sprites.ContainsKey("ui/heart") Then
+            _sprites("ui/heart") = GenerateHeartBitmap(22, Color.FromArgb(255, 80, 100))
+        End If
+        If Not _sprites.ContainsKey("ui/powerup_life") Then
+            _sprites("ui/powerup_life") = GeneratePowerUpLifeBitmap(POWERUP_SIZE)
+        End If
+    End Sub
+
+    Private Function GenerateHeartBitmap(size As Integer, fillColor As Color) As Bitmap
+        Dim bmp As New Bitmap(size, size, Imaging.PixelFormat.Format32bppPArgb)
+        Using g As Graphics = Graphics.FromImage(bmp)
+            g.SmoothingMode = SmoothingMode.AntiAlias
+            g.Clear(Color.Transparent)
+            Dim s = CSng(size)
+            Dim pad = s * 0.08F
+            Dim w = s - pad * 2
+            Dim h = s - pad * 2
+            Dim x = pad, y = pad
+            Dim c1 = Color.FromArgb(fillColor.A,
+                Math.Min(255, CInt(fillColor.R) + 70),
+                Math.Min(255, CInt(fillColor.G) + 20),
+                Math.Min(255, CInt(fillColor.B) + 20))
+            Using br As New LinearGradientBrush(New RectangleF(x, y, w, h + 1), c1, fillColor, LinearGradientMode.Vertical)
+                ' Two overlapping circles form the top bumps
+                g.FillEllipse(br, x, y + h * 0.04F, w * 0.54F, h * 0.54F)
+                g.FillEllipse(br, x + w * 0.46F, y + h * 0.04F, w * 0.54F, h * 0.54F)
+                ' Triangle closes the bottom into a point
+                Dim pts() As PointF = {
+                    New PointF(x, y + h * 0.3F),
+                    New PointF(x + w, y + h * 0.3F),
+                    New PointF(x + w * 0.5F, y + h)
+                }
+                g.FillPolygon(br, pts)
+            End Using
+            ' Specular highlight on upper-left lobe
+            Using br As New SolidBrush(Color.FromArgb(110, 255, 255, 255))
+                g.FillEllipse(br, x + w * 0.1F, y + h * 0.08F, w * 0.22F, h * 0.18F)
+            End Using
+        End Using
+        Return bmp
+    End Function
+
+    Private Function GeneratePowerUpLifeBitmap(size As Integer) As Bitmap
+        Dim bmp As New Bitmap(size, size, Imaging.PixelFormat.Format32bppPArgb)
+        Using g As Graphics = Graphics.FromImage(bmp)
+            g.SmoothingMode = SmoothingMode.AntiAlias
+            g.Clear(Color.Transparent)
+            Dim s = CSng(size)
+            ' Dark circular badge background
+            Using br As New SolidBrush(Color.FromArgb(160, 60, 0, 20))
+                g.FillEllipse(br, 0, 0, s, s)
+            End Using
+            Using pen As New Pen(Color.FromArgb(200, 255, 80, 100), 2)
+                g.DrawEllipse(pen, 1, 1, s - 3, s - 3)
+            End Using
+            ' Heart centered inside the badge
+            Dim hs = CInt(s * 0.7F)
+            Dim ho = CSng((s - hs) / 2)
+            Dim w = CSng(hs), h = CSng(hs)
+            Dim x = ho, y = ho - s * 0.03F
+            Using br As New LinearGradientBrush(New RectangleF(x, y, w, h + 1),
+                Color.FromArgb(255, 255, 150, 160), Color.FromArgb(255, 220, 20, 50), LinearGradientMode.Vertical)
+                g.FillEllipse(br, x, y + h * 0.04F, w * 0.54F, h * 0.54F)
+                g.FillEllipse(br, x + w * 0.46F, y + h * 0.04F, w * 0.54F, h * 0.54F)
+                Dim pts() As PointF = {
+                    New PointF(x, y + h * 0.3F),
+                    New PointF(x + w, y + h * 0.3F),
+                    New PointF(x + w * 0.5F, y + h)
+                }
+                g.FillPolygon(br, pts)
+            End Using
+            Using br As New SolidBrush(Color.FromArgb(120, 255, 255, 255))
+                g.FillEllipse(br, x + w * 0.1F, y + h * 0.08F, w * 0.22F, h * 0.18F)
+            End Using
+        End Using
+        Return bmp
+    End Function
 #End Region
 
 #Region "Update Logic"
@@ -2003,19 +2083,12 @@ Public Class Form1
             End If
             DrawTextShadow(g, $"SCORE: {_score}", f, Color.White, CSng(If(starSpr IsNot Nothing, 38, 15)), 12)
             DrawCenteredText(g, $"LEVEL {_level}", f, Color.FromArgb(180, 200, 255), 12)
-            ' Lives with optional heart icons
-            Dim heartSpr = TryGetSprite("ui/heart")
-            If heartSpr IsNot Nothing Then
-                Dim hSz = 22, hPad = 2
-                Dim hX = CSng(LOGICAL_WIDTH - 15 - (hSz + hPad) * _lives)
-                For h = 0 To _lives - 1
-                    g.DrawImage(heartSpr, hX + h * (hSz + hPad), 10, hSz, hSz)
-                Next
-            Else
-                Dim lt = $"LIVES: {New String(ChrW(&H2665), _lives)}"
-                Dim lsz = g.MeasureString(lt, f)
-                DrawTextShadow(g, lt, f, Color.FromArgb(255, 100, 130), LOGICAL_WIDTH - lsz.Width - 15, 12)
-            End If
+            ' Lives — drawn directly so transparency issues with DrawImage never occur
+            Dim hSz As Single = 22, hPad As Single = 2
+            Dim hX = CSng(LOGICAL_WIDTH - 15 - (hSz + hPad) * _lives)
+            For h = 0 To _lives - 1
+                DrawHeartShape(g, hX + h * (hSz + hPad), 10.0F, hSz, hSz, Color.FromArgb(255, 80, 100))
+            Next
             If _speedBoost Then
                 Dim bt = ChrW(&H26A1) & " 2x SPEED"
                 Dim bsz = g.MeasureString(bt, f)
@@ -2561,6 +2634,30 @@ Public Class Form1
             Dim hx = x + CSng(w * Math.Max(0, Math.Min(100, value)) / 100.0) - h / 2
             g.DrawImage(handleSpr, hx, y - 2, h + 4, h + 4)
         End If
+    End Sub
+
+    Private Sub DrawHeartShape(g As Graphics, x As Single, y As Single, w As Single, h As Single, fillColor As Color)
+        Dim pad = w * 0.08F
+        Dim iw = w - pad * 2
+        Dim ih = h - pad * 2
+        Dim ix = x + pad, iy = y + pad
+        Dim c1 = Color.FromArgb(fillColor.A,
+            Math.Min(255, CInt(fillColor.R) + 70),
+            Math.Min(255, CInt(fillColor.G) + 20),
+            Math.Min(255, CInt(fillColor.B) + 20))
+        Using br As New LinearGradientBrush(New RectangleF(ix, iy, iw, ih + 1), c1, fillColor, LinearGradientMode.Vertical)
+            g.FillEllipse(br, ix, iy + ih * 0.04F, iw * 0.54F, ih * 0.54F)
+            g.FillEllipse(br, ix + iw * 0.46F, iy + ih * 0.04F, iw * 0.54F, ih * 0.54F)
+            Dim pts() As PointF = {
+                New PointF(ix, iy + ih * 0.3F),
+                New PointF(ix + iw, iy + ih * 0.3F),
+                New PointF(ix + iw * 0.5F, iy + ih)
+            }
+            g.FillPolygon(br, pts)
+        End Using
+        Using br As New SolidBrush(Color.FromArgb(110, 255, 255, 255))
+            g.FillEllipse(br, ix + iw * 0.1F, iy + ih * 0.08F, iw * 0.22F, ih * 0.18F)
+        End Using
     End Sub
 
     Private Function RoundedRect(rect As RectangleF, radius As Integer) As GraphicsPath
