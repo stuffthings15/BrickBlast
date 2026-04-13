@@ -1804,13 +1804,15 @@ Public Class GameCanvas
         ' =========================================================================
         Private Function GenerateMidiBytes() As Byte()
             Dim midi As New List(Of Byte)
+            Const REF_BPM As Integer = 120
             Dim melodyInsts() = {73, 80, 10, 81, 42, 19, 88, 80, 30, 31}
             Dim bassInsts() = {33, 38, 33, 38, 38, 43, 39, 38, 34, 34}
-            Dim bpms() = {50, 60, 54, 56, 36, 44, 29, 58, 56, 48}
+            Dim harmInsts() = {48, 80, 52, 71, 43, 19, 92, 80, 28, 28}
+            Dim bpms() = {90, 150, 140, 130, 70, 100, 50, 160, 145, 95}
             Dim si = Math.Min(_musicStyle, 9)
-            Dim inst = melodyInsts(si), bassInst = bassInsts(si)
-            Dim bpm = Math.Max(1, CInt(bpms(si) * _musicSpeed / 100.0))
-            Dim usPerQN = CInt(60000000.0 / bpm), tpq = 480
+            Dim inst = melodyInsts(si), bassInst = bassInsts(si), harmInst = harmInsts(si)
+            Dim playBpm = Math.Max(1, CInt(bpms(si) * _musicSpeed / 100.0))
+            Dim usPerQN = CInt(60000000.0 / playBpm), tpq = 480
             Dim freqs() As Integer = Nothing, durs() As Integer = Nothing
             GetMusicData(_musicStyle, freqs, durs)
             ' Double for longer loop (96 ? 192 notes)
@@ -1819,9 +1821,11 @@ Public Class GameCanvas
             Array.Copy(freqs, 0, f2, 0, n) : Array.Copy(durs, 0, d2, 0, n)
             Array.Copy(freqs, 0, f2, n, n) : Array.Copy(durs, 0, d2, n, n)
             freqs = f2 : durs = d2
-            ' Derive bass from melody
+            ' Derive bass and harmony from melody
             Dim bassF() As Integer = Nothing, bassD() As Integer = Nothing
             DeriveBassLine(freqs, durs, bassF, bassD)
+            Dim harmF() As Integer = Nothing, harmD() As Integer = Nothing
+            DeriveHarmonyTrack(freqs, durs, harmF, harmD)
             ' ?? Track 0: Tempo ??
             Dim trk0 As New List(Of Byte)
             MidiVL(trk0, 0) : trk0.Add(&HFF) : trk0.Add(&H51) : trk0.Add(3)
@@ -1834,24 +1838,33 @@ Public Class GameCanvas
             MidiVL(trk1, 0) : trk1.Add(&HB0) : trk1.Add(7)
             trk1.Add(CByte(Math.Min(127, CInt(_musicVolume * 1.27))))
             MidiVL(trk1, 0) : trk1.Add(&HC0) : trk1.Add(CByte(inst))
-            WriteMidiNotes(trk1, &H90, &H80, freqs, durs, tpq, bpm, 100)
+            WriteMidiNotes(trk1, &H90, &H80, freqs, durs, tpq, REF_BPM, 100)
             MidiVL(trk1, 0) : trk1.Add(&HFF) : trk1.Add(&H2F) : trk1.Add(0)
             ' ?? Track 2: Bass (channel 1) ??
             Dim trk2 As New List(Of Byte)
             MidiVL(trk2, 0) : trk2.Add(&HB1) : trk2.Add(7)
             trk2.Add(CByte(Math.Min(127, CInt(_musicVolume * 1.1))))
             MidiVL(trk2, 0) : trk2.Add(&HC1) : trk2.Add(CByte(bassInst))
-            WriteMidiNotes(trk2, &H91, &H81, bassF, bassD, tpq, bpm, 75)
+            WriteMidiNotes(trk2, &H91, &H81, bassF, bassD, tpq, REF_BPM, 75)
             MidiVL(trk2, 0) : trk2.Add(&HFF) : trk2.Add(&H2F) : trk2.Add(0)
+            ' Track 3: harmony/pad (channel 2)
+            Dim trk3 As New List(Of Byte)
+            MidiVL(trk3, 0) : trk3.Add(&HB2) : trk3.Add(7)
+            trk3.Add(CByte(Math.Min(127, CInt(_musicVolume * 0.9))))
+            MidiVL(trk3, 0) : trk3.Add(&HC2) : trk3.Add(CByte(harmInst))
+            WriteMidiNotes(trk3, &H92, &H82, harmF, harmD, tpq, REF_BPM, 55)
+            MidiVL(trk3, 0) : trk3.Add(&HFF) : trk3.Add(&H2F) : trk3.Add(0)
             ' ?? MIDI Header: Format 1, 3 tracks ??
             midi.AddRange(Encoding.ASCII.GetBytes("MThd"))
-            BE32(midi, 6) : BE16(midi, 1) : BE16(midi, 3) : BE16(midi, tpq)
+            BE32(midi, 6) : BE16(midi, 1) : BE16(midi, 4) : BE16(midi, tpq)
             midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
             BE32(midi, trk0.Count) : midi.AddRange(trk0)
             midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
             BE32(midi, trk1.Count) : midi.AddRange(trk1)
             midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
             BE32(midi, trk2.Count) : midi.AddRange(trk2)
+            midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
+            BE32(midi, trk3.Count) : midi.AddRange(trk3)
             Return midi.ToArray()
         End Function
 
@@ -1898,6 +1911,29 @@ Public Class GameCanvas
             bassFreqs = bf.ToArray() : bassDurs = bd.ToArray()
         End Sub
 
+        Private Sub DeriveHarmonyTrack(melFreqs() As Integer, melDurs() As Integer,
+                                       ByRef harmFreqs() As Integer, ByRef harmDurs() As Integer)
+            Dim hf As New List(Of Integer), hd As New List(Of Integer)
+            For i = 0 To melFreqs.Length - 1 Step 8
+                Dim root = 0, dur = 0
+                For j = i To Math.Min(i + 7, melFreqs.Length - 1)
+                    dur += melDurs(j)
+                    If melFreqs(j) > 0 AndAlso (root = 0 OrElse melFreqs(j) < root) Then root = melFreqs(j)
+                Next
+                If root > 0 Then
+                    While root > 520 : root = root \ 2 : End While
+                    While root < 260 : root = root * 2 : End While
+                    Dim fifth = CInt(root * 1.498)
+                    hf.Add(root) : hd.Add(CInt(dur * 0.48))
+                    hf.Add(fifth) : hd.Add(CInt(dur * 0.38))
+                    hf.Add(0) : hd.Add(CInt(dur * 0.14))
+                Else
+                    hf.Add(0) : hd.Add(dur)
+                End If
+            Next
+            harmFreqs = hf.ToArray() : harmDurs = hd.ToArray()
+        End Sub
+
         Private Sub MidiVL(d As List(Of Byte), v As Integer)
             If v < 0 Then v = 0
             If v < &H80 Then
@@ -1929,7 +1965,7 @@ Public Class GameCanvas
 
         Private Sub PreGenerateAllMusic()
             Try
-                Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v2")
+                Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v3")
                 If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
                 ReDim _musicFiles(9)
                 For i = 0 To 9
@@ -2000,7 +2036,7 @@ Public Class GameCanvas
 
     Private Sub StartHighScoreMusic()
         Try
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v2")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v3")
             If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
             _highScoreMusicFile = Path.Combine(tmpDir, "highscore.mid")
             Dim old = _musicStyle : _musicStyle = 6 : File.WriteAllBytes(_highScoreMusicFile, GenerateMidiBytes()) : _musicStyle = old
@@ -2031,7 +2067,7 @@ Public Class GameCanvas
                     If Not String.IsNullOrEmpty(f) AndAlso File.Exists(f) Then Try : File.Delete(f) : Catch : End Try
                 Next
             End If
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v2")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v3")
             If Directory.Exists(tmpDir) Then Try : Directory.Delete(tmpDir, True) : Catch : End Try
         Catch : End Try
     End Sub
