@@ -23,6 +23,41 @@ Public Class Form1
     Private Shared Function mciSendString(command As String, buffer As StringBuilder, bufferSize As Integer, hwndCallback As IntPtr) As Integer
     End Function
 
+    ' XInput gamepad support (xinput1_4 on Win8+)
+    <DllImport("xinput1_4.dll", EntryPoint:="XInputGetState", SetLastError:=True)>
+    Private Shared Function XInputGetState(dwUserIndex As Integer, ByRef pState As XINPUT_STATE) As Integer
+    End Function
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure XINPUT_GAMEPAD
+        Public wButtons As UShort
+        Public bLeftTrigger As Byte
+        Public bRightTrigger As Byte
+        Public sThumbLX As Short
+        Public sThumbLY As Short
+        Public sThumbRX As Short
+        Public sThumbRY As Short
+    End Structure
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure XINPUT_STATE
+        Public dwPacketNumber As Integer
+        Public Gamepad As XINPUT_GAMEPAD
+    End Structure
+
+    Private Const XINPUT_GAMEPAD_DPAD_UP As UShort = &H1US
+    Private Const XINPUT_GAMEPAD_DPAD_DOWN As UShort = &H2US
+    Private Const XINPUT_GAMEPAD_DPAD_LEFT As UShort = &H4US
+    Private Const XINPUT_GAMEPAD_DPAD_RIGHT As UShort = &H8US
+    Private Const XINPUT_GAMEPAD_START As UShort = &H10US
+    Private Const XINPUT_GAMEPAD_BACK As UShort = &H20US
+    Private Const XINPUT_GAMEPAD_A As UShort = &H1000US
+    Private Const XINPUT_GAMEPAD_B As UShort = &H2000US
+    Private Const XINPUT_GAMEPAD_X As UShort = &H4000US
+    Private Const XINPUT_GAMEPAD_Y As UShort = &H8000US
+    Private Const XINPUT_GAMEPAD_LEFT_SHOULDER As UShort = &H100US
+    Private Const XINPUT_GAMEPAD_RIGHT_SHOULDER As UShort = &H200US
+
     Private Const SND_ASYNC As UInteger = &H1
     Private Const SND_MEMORY As UInteger = &H4
     Private Const MM_MCINOTIFY As Integer = &H3B9
@@ -168,6 +203,12 @@ Public Class Form1
 
     Private _leftPressed As Boolean = False
     Private _rightPressed As Boolean = False
+    Private _gamepadLeft As Boolean = False
+    Private _gamepadRight As Boolean = False
+    Private _prevGamepadButtons As UShort = 0
+    Private _gamepadAvailable As Boolean = True
+    Private _touchActive As Boolean = False
+    Private _touchX As Single = -1
 
     Private _rng As New Random()
     Private _frameCount As Integer = 0
@@ -245,9 +286,9 @@ Public Class Form1
     Private _colorblindSymbols() As String = {ChrW(&H25A0), ChrW(&H25B2), ChrW(&H25CF), ChrW(&H2666), ChrW(&H2605), ChrW(&H25C6), ChrW(&H2663)}
 
     Private _musicStyleNames() As String = {
-        "Zelda Adventure", "Mega Man Energy", "Tetris Classic", "Pac-Man Playful",
-        "Space Invaders", "Castlevania Dark", "Metroid Atmosphere", "Galaga Arcade",
-        "Contra Action", "Double Dragon"}
+        "Mega Man Wily", "Zelda Overworld", "Tetris Type A", "Mario World",
+        "Castlevania", "Final Fantasy", "Sonic Green Hill", "Metroid Brinstar",
+        "Mega Man Elec", "Zelda Dungeon"}
 
     Private _sfxStyleNames() As String = {"Classic", "Zelda", "Mega Man", "Tetris", "Retro Arcade"}
 
@@ -448,23 +489,50 @@ Public Class Form1
         End Select
     End Sub
 
+    Private Sub Form1_MouseMove(sender As Object, e As MouseEventArgs) Handles MyBase.MouseMove
+        If _state = GameState.Playing AndAlso e.Button <> MouseButtons.None Then
+            _touchActive = True
+            _touchX = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
+        End If
+    End Sub
+
+    Private Sub Form1_MouseUp(sender As Object, e As MouseEventArgs) Handles MyBase.MouseUp
+        _touchActive = False
+    End Sub
+
     Private Sub Form1_MouseDown(sender As Object, e As MouseEventArgs) Handles MyBase.MouseDown
+        Dim mx = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
+        Dim my = CSng(e.Y) * LOGICAL_HEIGHT / ClientSize.Height
+        ' Touch/click to start, resume, or advance level
+        If _state = GameState.Menu Then
+            StartNewGame()
+            Return
+        End If
+        If _state = GameState.Paused AndAlso Not _pendingHighScore Then
+            _state = GameState.Playing
+            Return
+        End If
+        If _state = GameState.LevelComplete Then
+            NextLevel()
+            Return
+        End If
         If _state = GameState.Playing Then
+            ' Touch sets paddle target + speed boost
+            _touchActive = True
+            _touchX = mx
             AdjustBallSpeed(1.12F)
             PlaySFX(_sfxData(_sfxStyle)(10), 60)
             SpawnParticles(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2, Color.FromArgb(255, 200, 50), 6)
             Return
         End If
         If _state <> GameState.Options Then Return
-        Dim mx = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
-        Dim my = CSng(e.Y) * LOGICAL_HEIGHT / ClientSize.Height
         Dim pw = 780, ph = 600
         Dim px = CSng((LOGICAL_WIDTH - pw) / 2)
         Dim py = CSng((LOGICAL_HEIGHT - ph) / 2)
-        Dim settingsY = py + 298
+        Dim settingsY = py + 373
         Dim barX = px + 260
         For idx = 0 To 6
-            Dim itemY = settingsY + idx * 32
+            Dim itemY = settingsY + idx * 28
             If my >= itemY AndAlso my < itemY + 30 Then
                 _settingsSelection = idx
                 If mx >= barX Then
@@ -544,6 +612,7 @@ Public Class Form1
     Private Sub GameTimer_Tick(sender As Object, e As EventArgs) Handles GameTimer.Tick
         _frameCount += 1
         UpdateStarField()
+        PollGamepad()
         If _highScoreDelayFrames > 0 Then
             _highScoreDelayFrames -= 1
             If _highScoreDelayFrames = 0 AndAlso _pendingHighScore Then
@@ -737,183 +806,182 @@ Public Class Form1
     ' =========================================================================
     ' MUSIC DATA — 96-note compositions per style (6 sections of 16 notes).
     ' Doubled to 192 notes by GenerateMidiBytes for ~40s loops.
+    ' Styles/tempos sourced from MusicXML reference (TextFile1.txt P1–P10).
     ' =========================================================================
     Private Sub GetMusicData(style As Integer, ByRef freqs() As Integer, ByRef durs() As Integer)
         Select Case style
-            Case 0 ' Zelda Adventure — G major, lyrical flute, open arpeggios
+            Case 0 ' Mega Man Dr. Wily — C minor, aggressive driving arpeggios (160 BPM)
                 freqs = {
-                392, 494, 587, 784, 659, 587, 494, 0, 392, 440, 494, 587, 659, 587, 494, 392,
-                440, 523, 659, 880, 784, 659, 523, 0, 587, 659, 784, 880, 784, 659, 587, 523,
-                392, 494, 587, 784, 659, 587, 494, 440, 392, 440, 494, 587, 784, 0, 659, 587,
-                494, 587, 784, 988, 880, 784, 659, 587, 523, 659, 784, 880, 988, 880, 784, 0,
-                330, 392, 494, 659, 587, 494, 392, 0, 440, 494, 587, 659, 587, 494, 440, 392,
-                392, 494, 587, 659, 587, 494, 392, 0, 330, 392, 440, 494, 587, 494, 392, 0}
+                262, 311, 392, 523, 466, 392, 311, 0, 294, 349, 440, 587, 523, 440, 349, 0,
+                523, 622, 784, 622, 523, 466, 392, 0, 466, 523, 622, 784, 622, 523, 466, 392,
+                262, 392, 523, 784, 622, 523, 392, 0, 311, 392, 466, 523, 622, 523, 466, 0,
+                784, 622, 523, 466, 392, 311, 262, 0, 392, 466, 523, 622, 784, 622, 523, 392,
+                262, 311, 392, 466, 523, 466, 392, 311, 262, 349, 440, 523, 587, 523, 440, 0,
+                392, 523, 622, 784, 622, 523, 392, 0, 311, 392, 466, 523, 466, 392, 311, 0}
                 durs = {
-                200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
-                200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
-                200, 200, 200, 300, 200, 200, 200, 200, 200, 200, 200, 350, 300, 100, 200, 300,
-                200, 200, 200, 350, 200, 200, 200, 200, 200, 200, 200, 300, 300, 200, 350, 200,
-                200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
-                200, 200, 200, 300, 200, 200, 400, 100, 200, 200, 200, 300, 300, 200, 400, 200}
+                120, 120, 120, 200, 120, 120, 200, 100, 120, 120, 120, 200, 120, 120, 200, 100,
+                150, 150, 200, 120, 120, 120, 200, 100, 120, 120, 120, 200, 120, 120, 120, 200,
+                120, 120, 200, 200, 120, 120, 200, 100, 120, 120, 120, 120, 200, 120, 200, 100,
+                200, 120, 120, 120, 120, 120, 200, 100, 120, 120, 120, 200, 200, 120, 120, 200,
+                120, 120, 120, 120, 200, 120, 120, 200, 120, 120, 120, 200, 200, 120, 200, 100,
+                120, 200, 200, 200, 120, 120, 200, 100, 120, 120, 120, 200, 120, 120, 300, 150}
 
-            Case 1 ' Mega Man Energy — E minor, driving square lead, fast runs
+            Case 1 ' Zelda Overworld — G major, heroic lyrical flute (120 BPM)
                 freqs = {
-                659, 659, 587, 523, 587, 659, 784, 659, 880, 784, 659, 587, 523, 587, 659, 523,
-                659, 784, 880, 988, 880, 784, 659, 523, 587, 659, 784, 880, 784, 659, 587, 494,
-                659, 659, 587, 523, 587, 659, 784, 880, 784, 659, 523, 440, 494, 523, 587, 659,
-                880, 988, 880, 784, 659, 784, 880, 988, 784, 659, 587, 523, 587, 659, 784, 0,
-                330, 392, 440, 494, 523, 494, 440, 392, 440, 494, 523, 587, 659, 587, 523, 494,
-                659, 784, 880, 988, 880, 784, 659, 587, 523, 587, 659, 784, 880, 784, 659, 0}
+                392, 494, 587, 784, 659, 587, 494, 0, 440, 523, 659, 784, 659, 523, 440, 0,
+                587, 740, 880, 784, 659, 587, 494, 0, 523, 659, 784, 880, 784, 659, 523, 440,
+                784, 880, 988, 880, 784, 659, 587, 0, 659, 784, 880, 784, 659, 587, 494, 392,
+                494, 587, 659, 784, 880, 784, 659, 0, 587, 659, 784, 880, 988, 880, 784, 0,
+                392, 494, 587, 659, 587, 494, 392, 0, 440, 587, 740, 587, 494, 440, 392, 0,
+                494, 587, 659, 587, 494, 392, 330, 0, 392, 440, 494, 587, 494, 440, 392, 0}
                 durs = {
-                130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 200,
-                130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 200,
-                130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 130, 200,
-                130, 200, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 200, 150,
-                150, 150, 150, 150, 150, 150, 150, 200, 150, 150, 150, 150, 150, 150, 150, 200,
-                130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 200, 130, 200, 150}
+                250, 200, 200, 350, 200, 200, 300, 150, 200, 200, 250, 350, 200, 200, 300, 150,
+                200, 200, 300, 200, 200, 200, 350, 150, 200, 200, 250, 350, 200, 200, 200, 300,
+                250, 250, 350, 200, 200, 200, 300, 150, 200, 250, 300, 200, 200, 200, 200, 300,
+                200, 200, 200, 300, 350, 200, 300, 150, 200, 200, 250, 300, 350, 200, 300, 200,
+                250, 200, 200, 350, 200, 200, 350, 150, 200, 250, 300, 200, 200, 200, 350, 200,
+                200, 200, 300, 200, 200, 200, 400, 150, 250, 200, 200, 350, 200, 200, 400, 250}
 
-            Case 2 ' Tetris Classic — A minor, Korobeiniki folk melody, music box
+            Case 2 ' Tetris Type A — A minor, Korobeiniki folk melody (140 BPM)
                 freqs = {
                 659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 0,
-                523, 587, 659, 523, 440, 440, 523, 587, 659, 587, 523, 494, 440, 494, 523, 587,
-                659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 523,
-                587, 0, 698, 880, 784, 698, 659, 0, 523, 0, 659, 587, 523, 494, 440, 0,
-                587, 698, 880, 784, 698, 659, 523, 659, 587, 523, 494, 440, 494, 523, 587, 659,
-                659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 0}
+                523, 587, 659, 523, 440, 440, 0, 494, 523, 587, 659, 587, 523, 494, 440, 0,
+                698, 880, 784, 698, 659, 0, 523, 659, 587, 523, 494, 440, 494, 523, 587, 659,
+                440, 0, 440, 523, 659, 587, 523, 494, 523, 587, 659, 523, 440, 440, 392, 0,
+                698, 880, 784, 698, 659, 523, 659, 587, 523, 494, 440, 0, 494, 523, 587, 0,
+                659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 440, 0}
                 durs = {
                 200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 200, 100,
-                100, 200, 200, 100, 200, 100, 100, 200, 200, 100, 100, 200, 100, 100, 100, 200,
-                200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 200, 100,
-                200, 200, 200, 100, 200, 100, 100, 200, 200, 100, 200, 100, 100, 200, 200, 200,
-                200, 100, 200, 100, 100, 200, 100, 200, 200, 100, 100, 200, 100, 100, 200, 200,
-                200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 300, 200}
+                100, 200, 200, 100, 200, 200, 100, 100, 100, 200, 200, 100, 100, 200, 200, 200,
+                200, 100, 200, 100, 200, 100, 200, 100, 100, 100, 200, 100, 100, 100, 200, 200,
+                200, 200, 200, 100, 200, 100, 100, 100, 100, 200, 200, 100, 200, 200, 300, 200,
+                200, 100, 200, 100, 100, 100, 200, 100, 100, 200, 200, 200, 100, 100, 300, 200,
+                200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 200, 200, 400, 200}
 
-            Case 3 ' Pac-Man Playful — C major, bouncy staccato, octave jumps
+            Case 3 ' Mario Overworld — C major, cheerful bouncy staccato (100 BPM)
                 freqs = {
-                523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 0,
-                659, 784, 880, 784, 659, 523, 440, 523, 659, 784, 880, 1047, 880, 784, 659, 0,
-                523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 880,
-                440, 523, 659, 523, 440, 392, 349, 392, 440, 523, 659, 784, 659, 523, 440, 0,
-                784, 880, 1047, 880, 784, 659, 784, 880, 1047, 880, 784, 659, 523, 659, 784, 0,
-                523, 1047, 784, 659, 523, 494, 440, 494, 523, 659, 784, 880, 1047, 880, 784, 0}
+                659, 659, 0, 659, 0, 523, 659, 0, 784, 0, 0, 0, 392, 0, 0, 0,
+                523, 0, 0, 392, 0, 0, 330, 0, 440, 494, 0, 466, 440, 0, 392, 659,
+                784, 880, 0, 698, 784, 0, 659, 0, 523, 587, 494, 0, 0, 0, 523, 0,
+                0, 392, 0, 0, 330, 0, 440, 494, 0, 466, 440, 0, 392, 659, 784, 0,
+                880, 0, 698, 784, 0, 659, 0, 523, 587, 494, 0, 0, 784, 740, 698, 622,
+                659, 0, 415, 440, 523, 0, 440, 523, 587, 0, 0, 784, 740, 698, 622, 0}
                 durs = {
-                160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 300, 100,
-                160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 300, 160, 160, 200, 150,
-                160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 160, 200,
-                160, 160, 200, 160, 160, 160, 160, 160, 160, 160, 160, 200, 160, 160, 300, 100,
-                200, 160, 200, 160, 160, 160, 160, 200, 200, 160, 160, 160, 160, 160, 300, 100,
-                160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 200, 200, 160, 300, 150}
+                150, 150, 100, 150, 100, 150, 300, 100, 300, 100, 200, 100, 300, 100, 200, 100,
+                300, 100, 100, 300, 100, 100, 300, 100, 200, 200, 100, 150, 200, 100, 200, 200,
+                200, 300, 100, 200, 200, 100, 200, 100, 200, 200, 300, 100, 200, 100, 300, 100,
+                100, 300, 100, 100, 300, 100, 200, 200, 100, 150, 200, 100, 200, 200, 300, 100,
+                300, 100, 200, 200, 100, 200, 100, 200, 200, 300, 100, 100, 150, 150, 150, 150,
+                300, 100, 150, 200, 200, 100, 200, 200, 300, 100, 100, 150, 150, 150, 300, 200}
 
-            Case 4 ' Space Invaders — E low, ominous march, cello, building tension
+            Case 4 ' Castlevania — A harmonic minor, gothic organ arpeggios (150 BPM)
                 freqs = {
-                165, 165, 165, 0, 147, 147, 147, 0, 131, 131, 131, 0, 147, 165, 196, 262,
-                196, 165, 131, 0, 165, 165, 165, 0, 147, 147, 147, 0, 131, 165, 196, 0,
-                220, 220, 220, 0, 196, 196, 196, 0, 175, 175, 175, 0, 196, 220, 262, 294,
-                262, 262, 294, 0, 262, 220, 196, 0, 220, 247, 262, 294, 262, 220, 196, 165,
-                294, 262, 247, 220, 196, 175, 165, 0, 131, 147, 165, 196, 220, 196, 165, 0,
-                165, 165, 165, 0, 147, 147, 147, 0, 131, 131, 131, 0, 165, 196, 220, 0}
+                440, 523, 659, 831, 659, 523, 440, 0, 494, 587, 698, 880, 698, 587, 494, 0,
+                659, 831, 880, 831, 659, 523, 440, 0, 523, 659, 831, 880, 988, 880, 831, 0,
+                440, 415, 392, 349, 392, 415, 440, 523, 659, 831, 880, 831, 659, 523, 440, 0,
+                587, 698, 880, 698, 587, 523, 494, 440, 415, 440, 523, 659, 831, 659, 523, 0,
+                880, 831, 659, 523, 440, 523, 659, 831, 880, 988, 880, 831, 659, 523, 440, 0,
+                523, 440, 415, 392, 415, 440, 523, 659, 831, 659, 523, 440, 392, 415, 440, 0}
                 durs = {
-                250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 200, 200, 200, 400,
-                250, 250, 400, 200, 250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 400, 150,
-                250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 200, 200, 200, 400,
-                300, 300, 300, 200, 300, 250, 250, 200, 200, 200, 200, 300, 250, 250, 250, 300,
-                200, 200, 200, 200, 250, 250, 400, 200, 250, 250, 250, 250, 300, 250, 400, 200,
-                250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 400, 200}
+                150, 150, 150, 250, 150, 150, 250, 100, 150, 150, 150, 250, 150, 150, 250, 100,
+                180, 200, 250, 180, 150, 150, 250, 100, 150, 180, 200, 250, 300, 200, 250, 100,
+                180, 180, 180, 180, 180, 180, 180, 200, 200, 250, 180, 180, 180, 180, 300, 100,
+                150, 180, 250, 180, 150, 150, 180, 200, 180, 180, 180, 200, 250, 180, 300, 100,
+                200, 180, 180, 180, 180, 180, 180, 200, 250, 250, 180, 180, 180, 180, 300, 100,
+                180, 180, 180, 180, 180, 180, 180, 200, 250, 180, 180, 180, 180, 180, 350, 200}
 
-            Case 5 ' Castlevania Dark — A minor harmonic, gothic organ arpeggios
+            Case 5 ' Final Fantasy — C major, sweeping harp prelude (90 BPM)
                 freqs = {
-                440, 523, 659, 880, 831, 659, 523, 440, 494, 587, 698, 988, 880, 698, 587, 494,
-                880, 831, 659, 523, 440, 415, 392, 440, 523, 587, 659, 784, 831, 784, 659, 523,
-                440, 523, 659, 880, 831, 659, 523, 440, 392, 440, 494, 523, 494, 440, 392, 0,
-                659, 587, 523, 494, 523, 587, 659, 784, 831, 784, 659, 587, 523, 587, 659, 880,
-                440, 0, 415, 0, 392, 0, 349, 0, 392, 415, 440, 523, 659, 880, 831, 659,
-                440, 523, 659, 880, 988, 880, 784, 659, 523, 587, 659, 784, 880, 831, 659, 0}
+                262, 330, 392, 523, 392, 330, 262, 0, 294, 349, 440, 587, 440, 349, 294, 0,
+                330, 392, 523, 659, 523, 392, 330, 0, 349, 440, 587, 784, 587, 440, 349, 0,
+                523, 659, 784, 1047, 784, 659, 523, 0, 440, 587, 784, 880, 784, 587, 440, 0,
+                392, 523, 659, 784, 659, 523, 392, 0, 330, 440, 523, 659, 523, 440, 330, 0,
+                262, 330, 392, 523, 659, 784, 659, 523, 392, 330, 262, 0, 294, 392, 494, 0,
+                262, 330, 392, 523, 392, 330, 262, 0, 330, 392, 440, 523, 440, 392, 330, 0}
                 durs = {
-                180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250,
-                180, 180, 180, 180, 200, 200, 200, 250, 180, 180, 180, 250, 200, 180, 180, 250,
-                180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 200, 200, 350, 150,
-                180, 180, 180, 180, 180, 180, 180, 250, 200, 180, 180, 180, 180, 180, 180, 300,
-                300, 150, 300, 150, 300, 150, 300, 150, 180, 180, 180, 250, 200, 200, 200, 250,
-                180, 180, 180, 250, 200, 180, 180, 180, 180, 180, 180, 250, 300, 200, 350, 200}
+                300, 250, 250, 400, 250, 250, 350, 200, 300, 250, 250, 400, 250, 250, 350, 200,
+                250, 250, 250, 400, 250, 250, 350, 200, 250, 250, 250, 400, 250, 250, 350, 200,
+                300, 250, 300, 400, 300, 250, 350, 200, 250, 250, 300, 400, 300, 250, 350, 200,
+                250, 250, 250, 400, 250, 250, 350, 200, 250, 250, 250, 400, 250, 250, 350, 200,
+                250, 250, 250, 300, 350, 400, 300, 250, 250, 250, 350, 200, 250, 300, 400, 200,
+                300, 250, 250, 400, 250, 250, 400, 200, 250, 250, 250, 400, 250, 250, 450, 250}
 
-            Case 6 ' Metroid Atmosphere — atonal, sparse synth pad, wide intervals
+            Case 6 ' Sonic Green Hill — Bb major, fast energetic pop (140 BPM)
                 freqs = {
-                165, 0, 196, 0, 220, 0, 0, 0, 247, 0, 262, 0, 0, 0, 165, 0,
-                196, 0, 175, 0, 165, 0, 0, 0, 247, 262, 0, 0, 220, 196, 165, 0,
-                165, 0, 330, 0, 262, 0, 0, 0, 196, 0, 370, 0, 294, 0, 165, 0,
-                220, 247, 262, 294, 262, 247, 220, 0, 165, 196, 220, 247, 262, 220, 196, 0,
-                330, 294, 262, 247, 220, 196, 175, 165, 196, 0, 220, 0, 262, 0, 294, 0,
-                165, 0, 0, 0, 196, 0, 0, 0, 220, 0, 165, 0, 0, 0, 0, 0}
+                466, 523, 587, 698, 784, 698, 587, 0, 523, 587, 698, 880, 784, 698, 587, 0,
+                698, 784, 880, 932, 880, 784, 698, 0, 587, 698, 784, 880, 932, 880, 784, 0,
+                466, 587, 698, 880, 698, 587, 466, 0, 523, 698, 784, 880, 784, 698, 523, 0,
+                932, 880, 784, 698, 587, 523, 466, 0, 523, 587, 698, 784, 880, 784, 698, 0,
+                466, 523, 587, 698, 587, 523, 466, 0, 523, 587, 698, 784, 698, 587, 523, 0,
+                587, 698, 784, 880, 784, 698, 587, 0, 466, 523, 587, 698, 587, 523, 466, 0}
                 durs = {
-                400, 200, 400, 200, 400, 200, 300, 200, 400, 200, 400, 200, 300, 200, 500, 200,
-                400, 200, 400, 200, 400, 200, 300, 200, 300, 300, 300, 200, 400, 400, 500, 200,
-                400, 200, 500, 200, 400, 200, 300, 200, 400, 200, 500, 200, 400, 200, 500, 200,
-                250, 250, 250, 300, 250, 250, 400, 200, 250, 250, 250, 300, 300, 250, 500, 200,
-                300, 300, 300, 300, 300, 300, 300, 400, 400, 200, 400, 200, 400, 200, 400, 200,
-                500, 200, 300, 200, 500, 200, 300, 200, 400, 200, 500, 200, 300, 200, 300, 400}
+                140, 140, 140, 200, 200, 140, 250, 100, 140, 140, 140, 250, 200, 140, 250, 100,
+                140, 140, 200, 250, 200, 140, 250, 100, 140, 140, 200, 250, 250, 200, 250, 100,
+                140, 200, 200, 250, 200, 140, 250, 100, 140, 200, 200, 250, 200, 140, 250, 100,
+                200, 200, 140, 140, 140, 140, 250, 100, 140, 140, 200, 200, 250, 140, 250, 100,
+                140, 140, 140, 250, 140, 140, 300, 100, 140, 140, 200, 250, 200, 140, 250, 100,
+                140, 200, 200, 250, 200, 140, 250, 100, 140, 140, 200, 250, 200, 140, 350, 150}
 
-            Case 7 ' Galaga Arcade — C major, fast ascending, bright square lead
+            Case 7 ' Metroid Brinstar — E minor, sparse eerie atmosphere (130 BPM)
                 freqs = {
-                523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 1175, 880, 698, 587, 0,
-                523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 784, 659, 523, 440, 0,
-                659, 784, 880, 1047, 880, 784, 659, 523, 587, 698, 880, 1175, 1047, 880, 784, 659,
-                1047, 880, 784, 659, 523, 659, 784, 880, 1047, 1175, 1047, 880, 784, 659, 523, 0,
-                440, 523, 659, 784, 659, 523, 440, 0, 349, 440, 523, 659, 784, 659, 523, 440,
-                523, 659, 784, 1047, 880, 784, 659, 587, 523, 587, 659, 784, 1047, 880, 784, 0}
+                165, 0, 0, 0, 262, 0, 0, 0, 196, 0, 0, 0, 330, 0, 0, 0,
+                220, 0, 165, 0, 0, 0, 0, 0, 294, 0, 196, 0, 0, 0, 0, 0,
+                131, 0, 262, 0, 196, 0, 131, 0, 0, 0, 220, 0, 330, 0, 0, 0,
+                165, 196, 220, 262, 220, 196, 165, 0, 0, 0, 131, 0, 196, 0, 0, 0,
+                262, 0, 220, 0, 165, 0, 0, 0, 196, 0, 294, 0, 220, 0, 0, 0,
+                165, 0, 0, 0, 131, 0, 0, 0, 196, 0, 165, 0, 0, 0, 0, 0}
                 durs = {
-                140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 280, 100,
-                140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 200, 150,
-                140, 140, 140, 200, 140, 140, 140, 140, 140, 140, 140, 200, 200, 140, 140, 200,
-                200, 140, 140, 140, 140, 140, 140, 200, 200, 200, 140, 140, 140, 140, 280, 150,
-                140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 200, 140, 140, 200,
-                140, 140, 140, 200, 140, 140, 140, 140, 140, 140, 140, 200, 200, 140, 280, 150}
+                500, 300, 200, 200, 500, 300, 200, 200, 500, 300, 200, 200, 500, 300, 200, 200,
+                400, 200, 400, 200, 300, 200, 300, 200, 400, 200, 400, 200, 300, 200, 300, 200,
+                500, 200, 500, 200, 400, 200, 500, 200, 300, 200, 500, 200, 500, 200, 300, 300,
+                300, 300, 300, 400, 300, 300, 500, 200, 300, 200, 500, 200, 500, 200, 300, 300,
+                500, 200, 400, 200, 500, 200, 300, 300, 500, 200, 500, 200, 400, 200, 300, 300,
+                600, 200, 300, 200, 600, 200, 300, 200, 500, 200, 600, 200, 300, 200, 300, 400}
 
-            Case 8 ' Contra Action — E minor, military march, overdriven guitar
+            Case 8 ' Mega Man Elec — E minor, fast angular synth lead (145 BPM)
                 freqs = {
-                330, 330, 370, 392, 440, 392, 370, 330, 294, 294, 330, 370, 392, 370, 330, 294,
-                330, 392, 440, 494, 523, 494, 440, 392, 440, 494, 523, 587, 659, 587, 523, 494,
-                330, 330, 370, 392, 440, 494, 523, 587, 659, 587, 494, 440, 392, 370, 330, 0,
-                659, 659, 587, 523, 494, 523, 587, 659, 784, 659, 587, 523, 494, 523, 587, 0,
-                262, 294, 330, 370, 392, 370, 330, 294, 262, 294, 330, 392, 440, 392, 330, 294,
-                330, 392, 440, 494, 523, 587, 659, 784, 659, 587, 494, 440, 392, 330, 294, 0}
+                659, 784, 659, 523, 659, 784, 880, 784, 659, 523, 440, 523, 659, 784, 659, 0,
+                880, 784, 659, 523, 440, 523, 659, 880, 988, 880, 784, 659, 523, 659, 784, 0,
+                440, 523, 659, 784, 880, 784, 659, 523, 440, 370, 330, 370, 440, 523, 659, 0,
+                784, 880, 988, 880, 784, 659, 784, 880, 659, 523, 440, 370, 330, 370, 440, 0,
+                523, 659, 784, 880, 784, 659, 523, 440, 523, 659, 784, 880, 988, 880, 784, 0,
+                659, 523, 440, 370, 440, 523, 659, 784, 880, 784, 659, 523, 440, 523, 659, 0}
                 durs = {
-                170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250,
-                170, 170, 170, 200, 170, 170, 170, 250, 170, 170, 170, 200, 200, 170, 170, 250,
-                170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 170, 200, 170, 350, 100,
-                200, 200, 170, 170, 170, 170, 170, 250, 200, 170, 170, 170, 170, 170, 350, 150,
-                170, 170, 170, 170, 200, 170, 170, 250, 170, 170, 170, 200, 200, 170, 170, 250,
-                170, 170, 170, 200, 200, 170, 200, 250, 170, 170, 170, 170, 200, 170, 350, 150}
+                120, 120, 120, 120, 120, 120, 200, 120, 120, 120, 120, 120, 120, 200, 200, 150,
+                120, 120, 120, 120, 120, 120, 200, 200, 200, 120, 120, 120, 120, 120, 200, 150,
+                120, 120, 120, 200, 200, 120, 120, 120, 120, 120, 120, 120, 120, 120, 200, 150,
+                200, 200, 200, 120, 120, 120, 120, 200, 120, 120, 120, 120, 120, 120, 200, 150,
+                120, 120, 120, 200, 120, 120, 120, 120, 120, 120, 200, 200, 200, 120, 200, 150,
+                120, 120, 120, 120, 120, 120, 200, 200, 200, 120, 120, 120, 120, 120, 200, 150}
 
-            Case Else ' Double Dragon — A minor pentatonic, bluesy, gritty guitar
+            Case Else ' Zelda Dungeon — D minor, mysterious tense echoes (100 BPM)
                 freqs = {
-                220, 262, 330, 440, 392, 330, 262, 220, 247, 294, 349, 494, 440, 349, 294, 247,
-                330, 392, 440, 523, 440, 392, 330, 262, 294, 330, 392, 440, 523, 440, 392, 330,
-                220, 262, 330, 440, 392, 330, 262, 220, 294, 330, 392, 440, 392, 330, 294, 0,
-                440, 523, 587, 659, 587, 523, 440, 392, 330, 392, 440, 523, 587, 523, 440, 330,
-                220, 0, 262, 294, 330, 294, 262, 0, 220, 262, 330, 440, 392, 330, 262, 220,
-                330, 392, 440, 523, 587, 523, 440, 392, 330, 262, 294, 330, 440, 392, 330, 0}
+                294, 0, 349, 0, 440, 0, 349, 294, 262, 0, 294, 0, 349, 440, 523, 0,
+                440, 349, 294, 0, 262, 294, 349, 0, 440, 523, 587, 523, 440, 349, 294, 0,
+                349, 440, 523, 587, 523, 440, 349, 0, 294, 349, 440, 523, 440, 349, 294, 0,
+                523, 587, 659, 587, 523, 440, 349, 0, 440, 349, 294, 262, 294, 349, 440, 0,
+                294, 0, 349, 0, 440, 523, 440, 0, 349, 0, 294, 0, 262, 294, 349, 0,
+                440, 349, 294, 262, 294, 349, 440, 0, 349, 294, 262, 0, 294, 0, 0, 0}
                 durs = {
-                190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250,
-                190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250,
-                190, 190, 190, 250, 190, 190, 250, 200, 190, 190, 190, 250, 200, 190, 350, 150,
-                200, 190, 190, 250, 190, 190, 190, 200, 190, 190, 190, 250, 200, 190, 190, 250,
-                250, 150, 200, 200, 250, 200, 350, 150, 190, 190, 190, 250, 190, 190, 190, 250,
-                190, 190, 190, 250, 190, 190, 190, 200, 190, 190, 190, 250, 250, 200, 400, 200}
+                300, 200, 300, 200, 300, 200, 200, 300, 300, 200, 300, 200, 200, 200, 400, 200,
+                250, 200, 300, 200, 200, 200, 400, 200, 250, 300, 300, 200, 200, 200, 400, 200,
+                200, 200, 250, 300, 200, 200, 400, 200, 200, 200, 250, 300, 200, 200, 400, 200,
+                300, 250, 300, 200, 200, 200, 400, 200, 200, 200, 200, 200, 200, 200, 400, 200,
+                300, 200, 300, 200, 250, 300, 400, 200, 300, 200, 300, 200, 200, 200, 400, 200,
+                250, 200, 200, 200, 200, 200, 400, 200, 250, 200, 300, 200, 400, 200, 300, 400}
         End Select
     End Sub
 
     Private Function GenerateMidiBytes() As Byte()
         Const REF_BPM As Integer = 120   ' Fixed reference for tick calculation
         Dim midi As New List(Of Byte)
-        Dim melodyInsts() = {73, 80, 10, 81, 42, 19, 88, 80, 30, 31}
-        Dim bassInsts() = {33, 38, 33, 38, 38, 43, 39, 38, 34, 34}
+        Dim melodyInsts() = {80, 73, 10, 80, 19, 46, 80, 88, 80, 73}
+        Dim bassInsts() = {38, 33, 33, 33, 43, 33, 38, 39, 38, 33}
         ' Harmony: pad/strings/choir in mid-register at reduced velocity
-        Dim harmInsts() = {48, 80, 52, 71, 43, 19, 92, 80, 28, 28}
-        ' Canonical BPM per style at _musicSpeed = 100.
-        ' Zelda=90 lyrical|MegaMan=150 drive|Tetris=140 folk|PacMan=130 bounce
-        ' SpaceInvaders=70 march|Castlevania=100 gothic|Metroid=50 pad
-        ' Galaga=160 arcade|Contra=145 action|DoubleDragon=95 bluesy
-        Dim bpms() = {90, 150, 140, 130, 70, 100, 50, 160, 145, 95}
+        Dim harmInsts() = {80, 48, 52, 80, 19, 48, 80, 92, 80, 48}
+        ' BPMs from MusicXML reference — MegaManWily=160|Zelda=120|Tetris=140
+        ' Mario=100|Castlevania=150|FF=90|Sonic=140|Metroid=130|MegaElec=145|ZeldaDng=100
+        Dim bpms() = {160, 120, 140, 100, 150, 90, 140, 130, 145, 100}
         Dim si = Math.Min(_musicStyle, 9)
         Dim inst = melodyInsts(si), bassInst = bassInsts(si), harmInst = harmInsts(si)
         Dim playBpm = Math.Max(1, CInt(bpms(si) * _musicSpeed / 100.0))
@@ -1308,6 +1376,56 @@ Public Class Form1
         Me.CenterToScreen()
         InitStarField()
     End Sub
+
+    ' =============================================================
+    ' GAMEPAD — poll XInput controller each frame
+    ' =============================================================
+    Private Sub PollGamepad()
+        _gamepadLeft = False
+        _gamepadRight = False
+        If Not _gamepadAvailable Then Return
+        Try
+            Dim state As XINPUT_STATE
+            Dim result = XInputGetState(0, state)
+            If result <> 0 Then Return
+            Dim btns = state.Gamepad.wButtons
+            Dim pressed = CUShort(btns And Not _prevGamepadButtons)
+            ' D-pad and left stick for paddle movement
+            _gamepadLeft = (btns And XINPUT_GAMEPAD_DPAD_LEFT) <> 0
+            _gamepadRight = (btns And XINPUT_GAMEPAD_DPAD_RIGHT) <> 0
+            If state.Gamepad.sThumbLX < -8000 Then _gamepadLeft = True
+            If state.Gamepad.sThumbLX > 8000 Then _gamepadRight = True
+            ' A = Space (start / resume / speed toggle)
+            If (pressed And XINPUT_GAMEPAD_A) <> 0 Then SendGamepadKey(Keys.Space)
+            ' B = Pause
+            If (pressed And XINPUT_GAMEPAD_B) <> 0 Then SendGamepadKey(Keys.P)
+            ' Start = Options
+            If (pressed And XINPUT_GAMEPAD_START) <> 0 Then SendGamepadKey(Keys.O)
+            ' Y = Speed boost
+            If (pressed And XINPUT_GAMEPAD_Y) <> 0 Then SendGamepadKey(Keys.F)
+            ' In Options: D-pad up/down/left/right for menu navigation
+            If _state = GameState.Options Then
+                If (pressed And XINPUT_GAMEPAD_DPAD_UP) <> 0 Then SendGamepadKey(Keys.Up)
+                If (pressed And XINPUT_GAMEPAD_DPAD_DOWN) <> 0 Then SendGamepadKey(Keys.Down)
+                If (pressed And XINPUT_GAMEPAD_DPAD_LEFT) <> 0 Then SendGamepadKey(Keys.Left)
+                If (pressed And XINPUT_GAMEPAD_DPAD_RIGHT) <> 0 Then SendGamepadKey(Keys.Right)
+                If (pressed And XINPUT_GAMEPAD_A) <> 0 Then SendGamepadKey(Keys.Enter)
+            End If
+            ' In High Score: shoulders for backspace / enter
+            If _state = GameState.HighScore Then
+                If (pressed And XINPUT_GAMEPAD_LEFT_SHOULDER) <> 0 Then SendGamepadKey(Keys.Back)
+                If (pressed And XINPUT_GAMEPAD_RIGHT_SHOULDER) <> 0 Then SendGamepadKey(Keys.Enter)
+            End If
+            _prevGamepadButtons = btns
+        Catch
+            _gamepadAvailable = False
+        End Try
+    End Sub
+
+    Private Sub SendGamepadKey(key As Keys)
+        Dim e As New KeyEventArgs(key)
+        Form1_KeyDown(Me, e)
+    End Sub
 #End Region
 
 #Region "Sprite System"
@@ -1359,8 +1477,19 @@ Public Class Form1
 
 #Region "Update Logic"
     Private Sub UpdatePaddle()
-        If _leftPressed Then _paddleX -= PADDLE_SPEED
-        If _rightPressed Then _paddleX += PADDLE_SPEED
+        ' Keyboard + gamepad movement
+        If _leftPressed OrElse _gamepadLeft Then _paddleX -= PADDLE_SPEED
+        If _rightPressed OrElse _gamepadRight Then _paddleX += PADDLE_SPEED
+        ' Touch/mouse drag — move paddle toward finger position
+        If _touchActive AndAlso _touchX >= 0 Then
+            Dim target = _touchX - _paddleWidth / 2.0F
+            Dim diff = target - _paddleX
+            If Math.Abs(diff) > PADDLE_SPEED Then
+                _paddleX += CSng(Math.Sign(diff)) * PADDLE_SPEED
+            Else
+                _paddleX = target
+            End If
+        End If
         If _paddleX < 0 Then _paddleX = 0
         If _paddleX > LOGICAL_WIDTH - _paddleWidth Then _paddleX = LOGICAL_WIDTH - _paddleWidth
     End Sub
@@ -2196,7 +2325,7 @@ Public Class Form1
                                 End Using
                         End Select
                     End Using
-                    y += 32
+                    y += 28
                 Next
             End Using
         End Using
