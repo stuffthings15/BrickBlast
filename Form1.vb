@@ -1694,6 +1694,11 @@ Public Class Form1
         Dim bgSpr = TryGetSprite(bgKey)
         If bgSpr IsNot Nothing Then
             g.DrawImage(bgSpr, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+        Else
+            ' Guaranteed dark fill when no background sprite — ensures all text contrasts
+            Using br As New SolidBrush(Color.FromArgb(255, 10, 10, 25))
+                g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+            End Using
         End If
         For i = 0 To _starFieldX.Length - 1
             Dim bright = _starFieldBright(i)
@@ -1758,7 +1763,7 @@ Public Class Form1
                     g.FillPath(pbr, rr)
                 End Using
             End Using
-            DrawCenteredText(g, "BEST SCORES", _fnt10b, Color.FromArgb(255, 200, 100), 351)
+            DrawCenteredText(g, "BEST SCORES", _fnt10b, Color.FromArgb(255, 240, 100), 351)
             Dim sy = 368.0F
             For i = 0 To topN - 1
                 Dim rec = _highScores(i)
@@ -1767,7 +1772,7 @@ Public Class Form1
                 sy += 20
             Next
         ElseIf _highScore > 0 Then
-            DrawCenteredText(g, $"High Score: {_highScore}", _fnt14r, Color.FromArgb(255, 220, 100), 355)
+            DrawCenteredText(g, $"High Score: {_highScore}", _fnt14r, Color.FromArgb(255, 255, 120), 355)
         End If
         DrawCenteredText(g, ChrW(&H2699) & "  Press H or O for OPTIONS  " & ChrW(&H2699), _fnt14b, Color.FromArgb(100, 200, 255), 420)
         Dim keyArr = TryGetSprite("ui/key_arrows")
@@ -1800,9 +1805,7 @@ Public Class Form1
             If starSpr IsNot Nothing Then
                 g.DrawImage(starSpr, 15, 11, 20, 20)
             End If
-            Using br As New SolidBrush(Color.White)
-                g.DrawString($"SCORE: {_score}", f, br, If(starSpr IsNot Nothing, 38, 15), 12)
-            End Using
+            DrawTextShadow(g, $"SCORE: {_score}", f, Color.White, CSng(If(starSpr IsNot Nothing, 38, 15)), 12)
             DrawCenteredText(g, $"LEVEL {_level}", f, Color.FromArgb(180, 200, 255), 12)
             ' Lives with optional heart icons
             Dim heartSpr = TryGetSprite("ui/heart")
@@ -1815,30 +1818,22 @@ Public Class Form1
             Else
                 Dim lt = $"LIVES: {New String(ChrW(&H2665), _lives)}"
                 Dim lsz = g.MeasureString(lt, f)
-                Using br As New SolidBrush(Color.FromArgb(255, 100, 130))
-                    g.DrawString(lt, f, br, LOGICAL_WIDTH - lsz.Width - 15, 12)
-                End Using
+                DrawTextShadow(g, lt, f, Color.FromArgb(255, 100, 130), LOGICAL_WIDTH - lsz.Width - 15, 12)
             End If
             If _speedBoost Then
                 Dim bt = ChrW(&H26A1) & " 2x SPEED"
                 Dim bsz = g.MeasureString(bt, f)
-                Using br As New SolidBrush(Color.FromArgb(255, 200, 50))
-                    g.DrawString(bt, f, br, (LOGICAL_WIDTH - bsz.Width) / 2, 32)
-                End Using
+                DrawTextShadow(g, bt, f, Color.FromArgb(255, 255, 80), (LOGICAL_WIDTH - bsz.Width) / 2, 32)
             End If
             If _ballRadius <> BALL_RADIUS Then
                 Dim rt = $"Ball: {_ballRadius}px"
-                Using br As New SolidBrush(Color.FromArgb(150, 200, 255))
-                    g.DrawString(rt, f, br, 15, 32)
-                End Using
+                DrawTextShadow(g, rt, f, Color.FromArgb(150, 200, 255), 15, 32)
             End If
             If _paddleWidthTimer > 0 Then
                 Dim sec = CInt(Math.Ceiling(_paddleWidthTimer / 60.0))
                 Dim pt = $"Paddle: {sec}s"
                 Dim psz = g.MeasureString(pt, f)
-                Using br As New SolidBrush(Color.FromArgb(170, 80, 255))
-                    g.DrawString(pt, f, br, LOGICAL_WIDTH - psz.Width - 15, 32)
-                End Using
+                DrawTextShadow(g, pt, f, Color.FromArgb(170, 80, 255), LOGICAL_WIDTH - psz.Width - 15, 32)
             End If
         Using pen As New Pen(Color.FromArgb(40, 100, 180, 255), 1)
             g.DrawLine(pen, 0, 50, LOGICAL_WIDTH, 50)
@@ -1966,25 +1961,14 @@ Public Class Form1
             If puSpr IsNot Nothing Then
                 Dim sz2 = CSng(POWERUP_SIZE)
                 g.DrawImage(puSpr, pu.X - sz2 / 2, cy - sz2 / 2, sz2, sz2)
-                Using f As New Font("Segoe UI", 11, FontStyle.Bold)
-                    Dim ts = g.MeasureString(pu.Symbol, f)
-                    Using brSh As New SolidBrush(Color.FromArgb(180, 0, 0, 0))
-                        g.DrawString(pu.Symbol, f, brSh, pu.X - ts.Width / 2 + 1, cy - ts.Height / 2 + 1)
-                    End Using
-                    Using brLbl As New SolidBrush(Color.White)
-                        g.DrawString(pu.Symbol, f, brLbl, pu.X - ts.Width / 2, cy - ts.Height / 2)
-                    End Using
-                End Using
+                Dim ts = g.MeasureString(pu.Symbol, _fnt11b)
+                DrawTextShadow(g, pu.Symbol, _fnt11b, Color.White, pu.X - ts.Width / 2, cy - ts.Height / 2)
             Else
                 Using br As New SolidBrush(Color.FromArgb(200, pu.Color1.R, pu.Color1.G, pu.Color1.B))
                     g.FillEllipse(br, CSng(pu.X - POWERUP_SIZE / 2), CSng(cy - POWERUP_SIZE / 2), CSng(POWERUP_SIZE), CSng(POWERUP_SIZE))
                 End Using
-                Using f As New Font("Segoe UI", 18, FontStyle.Bold)
-                    Dim ts = g.MeasureString(pu.Symbol, f)
-                    Using br As New SolidBrush(Color.White)
-                        g.DrawString(pu.Symbol, f, br, pu.X - ts.Width / 2, cy - ts.Height / 2)
-                    End Using
-                End Using
+                Dim ts = g.MeasureString(pu.Symbol, _fnt18b)
+                DrawTextShadow(g, pu.Symbol, _fnt18b, Color.White, pu.X - ts.Width / 2, cy - ts.Height / 2)
             End If
         Next
     End Sub
@@ -2020,11 +2004,11 @@ Public Class Form1
             End Using
             Dim gemSpr = TryGetSprite("ui/gem")
             If gemSpr IsNot Nothing Then g.DrawImage(gemSpr, cx - 38, cy + 2, 28, 28)
-            Using br As New SolidBrush(Color.FromArgb(ga, 255, 200, 50))
+            Using br As New SolidBrush(Color.FromArgb(Math.Min(255, ga * 2), 255, 160, 0))
                 g.DrawString(text, f, br, cx - 2, cy - 2)
                 g.DrawString(text, f, br, cx + 2, cy + 2)
             End Using
-            Using br As New SolidBrush(Color.FromArgb(ca, 255, 240, 100))
+            Using br As New SolidBrush(Color.FromArgb(ca, 255, 255, 180))
                 g.DrawString(text, f, br, cx, cy)
             End Using
         End If
@@ -2045,11 +2029,11 @@ Public Class Form1
             Dim sz = g.MeasureString(countText, f)
             Dim cx = (LOGICAL_WIDTH - sz.Width) / 2
             Dim cy = LOGICAL_HEIGHT / 2.0F - sz.Height / 2 - 20
-            Using br As New SolidBrush(Color.FromArgb(50, 255, 220, 80))
+            Using br As New SolidBrush(Color.FromArgb(120, 255, 160, 0))
                 g.DrawString(countText, f, br, cx - 3, cy - 3)
                 g.DrawString(countText, f, br, cx + 3, cy + 3)
             End Using
-            Using br As New SolidBrush(Color.FromArgb(230, 255, 240, 100))
+            Using br As New SolidBrush(Color.FromArgb(255, 255, 255, 140))
                 g.DrawString(countText, f, br, cx, cy)
             End Using
         End Using
@@ -2096,7 +2080,7 @@ Public Class Form1
         Dim rx = CSng(px + pw / 2 + 10)
         Using fh As New Font("Segoe UI", 12, FontStyle.Bold)
             Using fb As New Font("Segoe UI", 10, FontStyle.Regular)
-                Using brH As New SolidBrush(Color.FromArgb(255, 200, 100))
+                Using brH As New SolidBrush(Color.FromArgb(255, 240, 100))
                     Using brB As New SolidBrush(Color.FromArgb(210, 210, 225))
                         g.DrawString("CONTROLS:", fh, brH, lx, y)
                         g.DrawString("POWER-UPS:", fh, brH, rx, y) : y += 24
@@ -2144,7 +2128,7 @@ Public Class Form1
                         g.DrawString(ChrW(8226) & " Catch power-ups with paddle        " & ChrW(8226) & " Enter your name on high scores", fb, brB, lx + 8, y) : y += 25
                     End Using
                 End Using
-                g.DrawString("SETTINGS:", fh, New SolidBrush(Color.FromArgb(255, 200, 100)), lx, y) : y += 28
+                g.DrawString("SETTINGS:", fh, New SolidBrush(Color.FromArgb(255, 240, 100)), lx, y) : y += 28
                 Dim barX = px + 260, barW As Single = 200, barH As Single = 16
                 Dim items = {
                     $"SFX Volume:",
@@ -2155,7 +2139,7 @@ Public Class Form1
                     $"Colorblind Mode:",
                     $"Window Size:"}
                 For idx = 0 To 6
-                    Dim sc = If(_settingsSelection = idx, Color.FromArgb(255, 220, 100), Color.FromArgb(195, 195, 215))
+                    Dim sc = If(_settingsSelection = idx, Color.FromArgb(255, 255, 120), Color.FromArgb(195, 195, 215))
                     Dim sel = If(_settingsSelection = idx, ChrW(&H25BA) & "  ", "    ")
                     Using brS As New SolidBrush(sc)
                         g.DrawString(sel & items(idx), fb, brS, lx + 8, y)
@@ -2238,7 +2222,7 @@ Public Class Form1
             End Using
         End If
         Using fs As New Font("Segoe UI", 18, FontStyle.Bold)
-            DrawCenteredText(g, $"Final Score: {_score}", fs, Color.FromArgb(255, 220, 100), py + 65)
+            DrawCenteredText(g, $"Final Score: {_score}", fs, Color.FromArgb(255, 255, 120), py + 65)
         End Using
         Using fl As New Font("Segoe UI", 12, FontStyle.Regular)
             DrawCenteredText(g, $"Level {_level}  |  Ball Size: {_ballRadius}px", fl, Color.FromArgb(180, 200, 255), py + 100)
@@ -2281,7 +2265,7 @@ Public Class Form1
                     Dim nm = If(rec.PlayerName.Length > 12, rec.PlayerName.Substring(0, 12), rec.PlayerName.PadRight(12))
                     Dim sc = rec.PlayerScore.ToString("N0").PadLeft(10)
                     Dim ec = If(_highScoreSaved AndAlso rec.PlayerName = _nameInput AndAlso rec.PlayerScore = _score,
-                                Color.FromArgb(255, 220, 100), Color.FromArgb(195, 195, 215))
+                                Color.FromArgb(255, 255, 120), Color.FromArgb(195, 195, 215))
                     If i = 0 Then
                         Dim goldSpr = TryGetSprite("ui/medal_gold")
                         If goldSpr IsNot Nothing Then g.DrawImage(goldSpr, CSng(LOGICAL_WIDTH / 2 - 230), y + 2, 18, 18)
