@@ -25,6 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include=".github\copilot-instructions.md" />
     <None Include="anime finder macos\BrickBlastMacOS.sln" />
   </ItemGroup>
 
