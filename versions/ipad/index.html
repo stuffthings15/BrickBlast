@@ -680,6 +680,7 @@ document.addEventListener('keydown',e=>{
   if(state===States.Menu){startGame();if(audioReady)startMusic()}
   else if(state===States.LevelComplete)nextLevel();
   else if(state===States.Paused)state=States.Playing;
+  else if(state===States.Playing){speedBoost=!speedBoost;playSFX(sfxData[sfxStyle][10],80)}
  }
  if((k==='p'||k==='escape')&&state===States.Playing)state=States.Paused;
  else if((k==='p'||k==='escape')&&state===States.Paused)state=States.Playing;

@@ -8,4 +8,14 @@
     <StartupObject>BrickBlastWPF.Program</StartupObject>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Exclude the standalone macOS/Avalonia project from this WPF build -->
+  <ItemGroup>
+    <Compile Remove="..\anime finder macos\**" />
+    <None Remove="..\anime finder macos\**" />
+  </ItemGroup>
 </Project>

@@ -1,5 +1,5 @@
 ' =============================================================================
-' CURTIS LOOP: BRICK BLAST — WinForms Version
+' ANIME FINDER — WinForms Version
 ' Team Fast Talk | CS-120 | .NET 10 | GDI+ Rendering
 '
 ' Single-file arcade brick-breaker with procedural audio, 7 power-ups,
@@ -27,9 +27,18 @@ Public Class Form1
     Private Const SND_MEMORY As UInteger = &H4
     Private Const MM_MCINOTIFY As Integer = &H3B9
     Private Const MCI_NOTIFY_SUCCESSFUL As Integer = 1
+    Private Const MutexName As String = "AnimeFinder_CS120_SingleInstance"
+    Private Shared _appMutex As System.Threading.Mutex
 
     Protected Overrides Sub WndProc(ByRef m As Message)
-        If m.Msg = MM_MCINOTIFY AndAlso m.WParam.ToInt32() = MCI_NOTIFY_SUCCESSFUL Then
+        If m.Msg = MM_MCINOTIFY AndAlso m.WParam.ToInt32() = MCI_NOTIFY_SUCCESSFUL AndAlso _musicPlaying Then
+            ' Reject notifications that arrive within 2s of a play command.
+            ' Prevents stale queued MCI_NOTIFY_SUCCESSFUL (from a just-finished
+            ' track) from firing again after we have already started a new track.
+            If Environment.TickCount64 - _musicLastStartMs < 2000L Then
+                MyBase.WndProc(m)
+                Return
+            End If
             _musicPlaying = False
             If _usingHighScoreMusic Then
                 ScheduleHighScoreMusicStart(10)
@@ -182,13 +191,14 @@ Public Class Form1
 
     Private _sfxVolume As Integer = 80
     Private _musicVolume As Integer = 100
-    Private _musicSpeed As Integer = 50
+    Private _musicSpeed As Integer = 75
     Private _colorblindMode As Boolean = False
     Private _speedBoost As Boolean = False
     Private _settingsSelection As Integer = 0
     Private _previousState As GameState = GameState.Menu
     Private _musicTempFile As String = ""
     Private _musicPlaying As Boolean = False
+    Private _musicLastStartMs As Long = 0L
     Private _musicFiles() As String = Nothing
     Private _lastSfxBuffer As Byte() = Nothing
     Private _musicStyle As Integer = 2
@@ -214,6 +224,7 @@ Public Class Form1
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "BrickBlast", "highscores.json")
     Private _getReadyFrames As Integer = 0
+    Private _sprites As New Dictionary(Of String, Bitmap)
 
     Private _colorblindColors As Color()() = {
         New Color() {Color.FromArgb(0, 114, 178), Color.FromArgb(60, 150, 210)},
@@ -243,9 +254,24 @@ Public Class Form1
 
 #Region "Form Events"
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        Dim createdNew As Boolean
+        _appMutex = New System.Threading.Mutex(True, MutexName, createdNew)
+        If Not createdNew Then
+            MessageBox.Show(
+                "Anime Finder is already running." & vbNewLine &
+                "Close the other window first, then press F5.",
+                "Already Running",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning)
+            _appMutex.Dispose()
+            _appMutex = Nothing
+            Me.Close()
+            Return
+        End If
         Me.DoubleBuffered = True
         Me.SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.UserPaint Or ControlStyles.OptimizedDoubleBuffer, True)
         Me.UpdateStyles()
+        LoadSprites()
         InitStarField()
         _state = GameState.Menu
         LoadHighScores()
@@ -260,7 +286,13 @@ Public Class Form1
     End Sub
 
     Private Sub Form1_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
+        DisposeSprites()
         CleanupMusic()
+        If _appMutex IsNot Nothing Then
+            Try : _appMutex.ReleaseMutex() : Catch : End Try
+            _appMutex.Dispose()
+            _appMutex = Nothing
+        End If
     End Sub
 
     Private Sub Form1_KeyDown(sender As Object, e As KeyEventArgs) Handles MyBase.KeyDown
@@ -347,6 +379,9 @@ Public Class Form1
                     NextLevel()
                 ElseIf _state = GameState.Paused Then
                     _state = GameState.Playing
+                ElseIf _state = GameState.Playing Then
+                    _speedBoost = Not _speedBoost
+                    PlaySFX(_sfxData(_sfxStyle)(10), 80)
                 End If
             Case Keys.P, Keys.Escape
                 If _state = GameState.Playing Then
@@ -662,131 +697,308 @@ Public Class Form1
         Return w
     End Function
 
+    ' =========================================================================
+    ' MUSIC DATA — 96-note compositions per style (6 sections of 16 notes).
+    ' Doubled to 192 notes by GenerateMidiBytes for ~40s loops.
+    ' =========================================================================
     Private Sub GetMusicData(style As Integer, ByRef freqs() As Integer, ByRef durs() As Integer)
         Select Case style
-            Case 0
-                freqs = {330, 392, 494, 659, 587, 494, 392, 0, 330, 392, 494, 659, 784, 659, 494, 0, 440, 523, 659, 880, 784, 659, 523, 0, 440, 523, 659, 784, 659, 523, 440, 0, 523, 587, 659, 784, 880, 784, 659, 587, 523, 587, 659, 523, 494, 440, 392, 0, 330, 392, 494, 523, 587, 659, 784, 880, 784, 659, 523, 440, 392, 330, 0, 0}
-                durs = {175, 175, 175, 250, 175, 175, 350, 100, 175, 175, 175, 250, 175, 175, 350, 100, 175, 175, 175, 250, 175, 175, 350, 100, 175, 175, 175, 250, 175, 175, 350, 200, 175, 175, 175, 250, 175, 175, 175, 175, 175, 175, 175, 175, 175, 175, 350, 100, 175, 175, 175, 175, 175, 175, 250, 175, 175, 175, 175, 175, 175, 350, 200, 300}
-            Case 1
-                freqs = {659, 659, 587, 523, 587, 659, 784, 659, 880, 784, 659, 587, 523, 587, 659, 523, 659, 659, 587, 523, 587, 659, 784, 659, 880, 784, 659, 587, 523, 587, 659, 0, 784, 880, 1047, 880, 784, 659, 784, 880, 784, 659, 523, 587, 659, 784, 659, 523, 659, 784, 880, 784, 659, 587, 523, 0, 659, 587, 523, 659, 784, 880, 1047, 0}
-                durs = {130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 200, 130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 150, 130, 130, 200, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 200, 130, 130, 130, 200, 150, 130, 130, 130, 130, 130, 130, 250, 300}
-            Case 2
-                freqs = {659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 523, 587, 659, 523, 440, 440, 0, 587, 698, 880, 784, 698, 659, 523, 659, 587, 523, 494, 523, 587, 659, 523, 440, 440, 0, 659, 784, 880, 1047, 880, 784, 659, 587, 523, 494, 440, 392, 349, 392, 440, 494, 523, 587, 659, 784, 880, 784, 659, 0}
-                durs = {200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 200, 100, 200, 200, 200, 200, 200, 200, 200, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 200, 200, 200, 200, 200, 150, 200, 200, 200, 250, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 250, 300}
-            Case 3
-                freqs = {523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 0, 523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 0, 659, 784, 880, 1047, 880, 784, 659, 523, 659, 784, 880, 784, 659, 523, 494, 440, 392, 440, 494, 523, 587, 659, 784, 880, 1047, 1175, 1047, 880, 784, 659, 523, 0}
-                durs = {160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 300, 150, 160, 160, 160, 200, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 200, 200, 200, 200, 200, 200, 300, 300}
-            Case 4
-                freqs = {165, 165, 165, 0, 147, 147, 147, 0, 131, 131, 131, 0, 147, 165, 196, 262, 196, 165, 131, 0, 165, 165, 165, 0, 147, 147, 147, 0, 131, 165, 196, 0, 220, 196, 175, 165, 147, 131, 117, 131, 147, 165, 196, 220, 247, 262, 294, 262, 247, 220, 196, 175, 165, 147, 131, 147, 165, 196, 220, 262, 294, 330, 349, 0}
-                durs = {250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 200, 200, 200, 400, 200, 200, 400, 200, 250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 400, 150, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 400, 300}
-            Case 5
-                freqs = {440, 523, 659, 880, 831, 659, 523, 440, 494, 587, 698, 988, 880, 698, 587, 494, 440, 523, 659, 880, 831, 659, 523, 440, 392, 440, 494, 523, 494, 440, 392, 0, 523, 659, 784, 880, 988, 880, 784, 659, 523, 587, 698, 784, 880, 784, 698, 587, 494, 523, 587, 659, 784, 880, 988, 1047, 988, 880, 784, 659, 523, 440, 392, 0}
-                durs = {180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 350, 150, 180, 180, 180, 180, 200, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 180, 200, 200, 200, 200, 200, 200, 200, 200, 350, 300}
-            Case 6
-                freqs = {165, 0, 175, 0, 196, 0, 220, 0, 196, 175, 165, 0, 147, 0, 131, 0, 165, 0, 175, 0, 196, 0, 220, 0, 247, 220, 196, 0, 175, 165, 147, 0, 131, 147, 165, 196, 220, 247, 277, 294, 277, 247, 220, 196, 175, 165, 147, 131, 117, 131, 147, 165, 196, 220, 247, 277, 294, 330, 349, 330, 294, 277, 247, 0}
-                durs = {300, 150, 300, 150, 300, 150, 300, 150, 200, 200, 400, 200, 300, 150, 400, 200, 300, 150, 300, 150, 300, 150, 300, 150, 200, 200, 400, 200, 200, 200, 400, 150, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 400, 300}
-            Case 7
-                freqs = {523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 1175, 880, 698, 587, 0, 523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 784, 659, 523, 440, 0, 659, 784, 880, 1047, 1175, 1047, 880, 784, 659, 587, 523, 494, 440, 392, 349, 392, 440, 494, 523, 587, 659, 784, 880, 1047, 1175, 1319, 1175, 1047, 880, 784, 659, 0}
-                durs = {140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 280, 150, 140, 140, 140, 140, 200, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140, 200, 200, 200, 200, 200, 200, 300, 300}
-            Case 8
-                freqs = {330, 330, 349, 392, 392, 349, 330, 294, 262, 262, 294, 330, 330, 294, 294, 0, 330, 330, 349, 392, 392, 349, 330, 294, 262, 262, 294, 330, 294, 262, 262, 0, 294, 330, 349, 392, 440, 494, 523, 494, 440, 392, 349, 330, 294, 262, 233, 262, 294, 330, 349, 392, 440, 494, 523, 587, 659, 587, 523, 494, 440, 392, 349, 0}
-                durs = {170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250, 250, 170, 350, 100, 170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250, 250, 170, 350, 150, 170, 170, 170, 170, 170, 170, 250, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 170, 250, 200, 200, 200, 200, 200, 200, 200, 350, 300}
-            Case Else
-                freqs = {220, 262, 330, 440, 392, 330, 262, 220, 247, 294, 349, 494, 440, 349, 294, 247, 220, 262, 330, 440, 392, 330, 262, 220, 196, 220, 247, 262, 247, 220, 196, 0, 262, 330, 392, 440, 523, 587, 659, 587, 523, 440, 392, 330, 294, 247, 220, 196, 175, 196, 220, 247, 294, 330, 392, 440, 523, 587, 659, 587, 523, 440, 392, 0}
-                durs = {190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 350, 150, 190, 190, 190, 190, 190, 190, 250, 190, 190, 190, 190, 190, 190, 190, 190, 190, 190, 190, 190, 190, 190, 190, 250, 200, 200, 200, 200, 200, 200, 200, 350, 300}
+            Case 0 ' Zelda Adventure — G major, lyrical flute, open arpeggios
+                freqs = {
+                392, 494, 587, 784, 659, 587, 494, 0, 392, 440, 494, 587, 659, 587, 494, 392,
+                440, 523, 659, 880, 784, 659, 523, 0, 587, 659, 784, 880, 784, 659, 587, 523,
+                392, 494, 587, 784, 659, 587, 494, 440, 392, 440, 494, 587, 784, 0, 659, 587,
+                494, 587, 784, 988, 880, 784, 659, 587, 523, 659, 784, 880, 988, 880, 784, 0,
+                330, 392, 494, 659, 587, 494, 392, 0, 440, 494, 587, 659, 587, 494, 440, 392,
+                392, 494, 587, 659, 587, 494, 392, 0, 330, 392, 440, 494, 587, 494, 392, 0}
+                durs = {
+                200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
+                200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
+                200, 200, 200, 300, 200, 200, 200, 200, 200, 200, 200, 350, 300, 100, 200, 300,
+                200, 200, 200, 350, 200, 200, 200, 200, 200, 200, 200, 300, 300, 200, 350, 200,
+                200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
+                200, 200, 200, 300, 200, 200, 400, 100, 200, 200, 200, 300, 300, 200, 400, 200}
+
+            Case 1 ' Mega Man Energy — E minor, driving square lead, fast runs
+                freqs = {
+                659, 659, 587, 523, 587, 659, 784, 659, 880, 784, 659, 587, 523, 587, 659, 523,
+                659, 784, 880, 988, 880, 784, 659, 523, 587, 659, 784, 880, 784, 659, 587, 494,
+                659, 659, 587, 523, 587, 659, 784, 880, 784, 659, 523, 440, 494, 523, 587, 659,
+                880, 988, 880, 784, 659, 784, 880, 988, 784, 659, 587, 523, 587, 659, 784, 0,
+                330, 392, 440, 494, 523, 494, 440, 392, 440, 494, 523, 587, 659, 587, 523, 494,
+                659, 784, 880, 988, 880, 784, 659, 587, 523, 587, 659, 784, 880, 784, 659, 0}
+                durs = {
+                130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 200,
+                130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 200,
+                130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 130, 200,
+                130, 200, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 200, 150,
+                150, 150, 150, 150, 150, 150, 150, 200, 150, 150, 150, 150, 150, 150, 150, 200,
+                130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 200, 130, 200, 150}
+
+            Case 2 ' Tetris Classic — A minor, Korobeiniki folk melody, music box
+                freqs = {
+                659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 0,
+                523, 587, 659, 523, 440, 440, 523, 587, 659, 587, 523, 494, 440, 494, 523, 587,
+                659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 523,
+                587, 0, 698, 880, 784, 698, 659, 0, 523, 0, 659, 587, 523, 494, 440, 0,
+                587, 698, 880, 784, 698, 659, 523, 659, 587, 523, 494, 440, 494, 523, 587, 659,
+                659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 0}
+                durs = {
+                200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 200, 100,
+                100, 200, 200, 100, 200, 100, 100, 200, 200, 100, 100, 200, 100, 100, 100, 200,
+                200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 200, 100,
+                200, 200, 200, 100, 200, 100, 100, 200, 200, 100, 200, 100, 100, 200, 200, 200,
+                200, 100, 200, 100, 100, 200, 100, 200, 200, 100, 100, 200, 100, 100, 200, 200,
+                200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 300, 200}
+
+            Case 3 ' Pac-Man Playful — C major, bouncy staccato, octave jumps
+                freqs = {
+                523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 0,
+                659, 784, 880, 784, 659, 523, 440, 523, 659, 784, 880, 1047, 880, 784, 659, 0,
+                523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 880,
+                440, 523, 659, 523, 440, 392, 349, 392, 440, 523, 659, 784, 659, 523, 440, 0,
+                784, 880, 1047, 880, 784, 659, 784, 880, 1047, 880, 784, 659, 523, 659, 784, 0,
+                523, 1047, 784, 659, 523, 494, 440, 494, 523, 659, 784, 880, 1047, 880, 784, 0}
+                durs = {
+                160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 300, 100,
+                160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 300, 160, 160, 200, 150,
+                160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 160, 200,
+                160, 160, 200, 160, 160, 160, 160, 160, 160, 160, 160, 200, 160, 160, 300, 100,
+                200, 160, 200, 160, 160, 160, 160, 200, 200, 160, 160, 160, 160, 160, 300, 100,
+                160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 200, 200, 160, 300, 150}
+
+            Case 4 ' Space Invaders — E low, ominous march, cello, building tension
+                freqs = {
+                165, 165, 165, 0, 147, 147, 147, 0, 131, 131, 131, 0, 147, 165, 196, 262,
+                196, 165, 131, 0, 165, 165, 165, 0, 147, 147, 147, 0, 131, 165, 196, 0,
+                220, 220, 220, 0, 196, 196, 196, 0, 175, 175, 175, 0, 196, 220, 262, 294,
+                262, 262, 294, 0, 262, 220, 196, 0, 220, 247, 262, 294, 262, 220, 196, 165,
+                294, 262, 247, 220, 196, 175, 165, 0, 131, 147, 165, 196, 220, 196, 165, 0,
+                165, 165, 165, 0, 147, 147, 147, 0, 131, 131, 131, 0, 165, 196, 220, 0}
+                durs = {
+                250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 200, 200, 200, 400,
+                250, 250, 400, 200, 250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 400, 150,
+                250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 200, 200, 200, 400,
+                300, 300, 300, 200, 300, 250, 250, 200, 200, 200, 200, 300, 250, 250, 250, 300,
+                200, 200, 200, 200, 250, 250, 400, 200, 250, 250, 250, 250, 300, 250, 400, 200,
+                250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 400, 200}
+
+            Case 5 ' Castlevania Dark — A minor harmonic, gothic organ arpeggios
+                freqs = {
+                440, 523, 659, 880, 831, 659, 523, 440, 494, 587, 698, 988, 880, 698, 587, 494,
+                880, 831, 659, 523, 440, 415, 392, 440, 523, 587, 659, 784, 831, 784, 659, 523,
+                440, 523, 659, 880, 831, 659, 523, 440, 392, 440, 494, 523, 494, 440, 392, 0,
+                659, 587, 523, 494, 523, 587, 659, 784, 831, 784, 659, 587, 523, 587, 659, 880,
+                440, 0, 415, 0, 392, 0, 349, 0, 392, 415, 440, 523, 659, 880, 831, 659,
+                440, 523, 659, 880, 988, 880, 784, 659, 523, 587, 659, 784, 880, 831, 659, 0}
+                durs = {
+                180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250,
+                180, 180, 180, 180, 200, 200, 200, 250, 180, 180, 180, 250, 200, 180, 180, 250,
+                180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 200, 200, 350, 150,
+                180, 180, 180, 180, 180, 180, 180, 250, 200, 180, 180, 180, 180, 180, 180, 300,
+                300, 150, 300, 150, 300, 150, 300, 150, 180, 180, 180, 250, 200, 200, 200, 250,
+                180, 180, 180, 250, 200, 180, 180, 180, 180, 180, 180, 250, 300, 200, 350, 200}
+
+            Case 6 ' Metroid Atmosphere — atonal, sparse synth pad, wide intervals
+                freqs = {
+                165, 0, 196, 0, 220, 0, 0, 0, 247, 0, 262, 0, 0, 0, 165, 0,
+                196, 0, 175, 0, 165, 0, 0, 0, 247, 262, 0, 0, 220, 196, 165, 0,
+                165, 0, 330, 0, 262, 0, 0, 0, 196, 0, 370, 0, 294, 0, 165, 0,
+                220, 247, 262, 294, 262, 247, 220, 0, 165, 196, 220, 247, 262, 220, 196, 0,
+                330, 294, 262, 247, 220, 196, 175, 165, 196, 0, 220, 0, 262, 0, 294, 0,
+                165, 0, 0, 0, 196, 0, 0, 0, 220, 0, 165, 0, 0, 0, 0, 0}
+                durs = {
+                400, 200, 400, 200, 400, 200, 300, 200, 400, 200, 400, 200, 300, 200, 500, 200,
+                400, 200, 400, 200, 400, 200, 300, 200, 300, 300, 300, 200, 400, 400, 500, 200,
+                400, 200, 500, 200, 400, 200, 300, 200, 400, 200, 500, 200, 400, 200, 500, 200,
+                250, 250, 250, 300, 250, 250, 400, 200, 250, 250, 250, 300, 300, 250, 500, 200,
+                300, 300, 300, 300, 300, 300, 300, 400, 400, 200, 400, 200, 400, 200, 400, 200,
+                500, 200, 300, 200, 500, 200, 300, 200, 400, 200, 500, 200, 300, 200, 300, 400}
+
+            Case 7 ' Galaga Arcade — C major, fast ascending, bright square lead
+                freqs = {
+                523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 1175, 880, 698, 587, 0,
+                523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 784, 659, 523, 440, 0,
+                659, 784, 880, 1047, 880, 784, 659, 523, 587, 698, 880, 1175, 1047, 880, 784, 659,
+                1047, 880, 784, 659, 523, 659, 784, 880, 1047, 1175, 1047, 880, 784, 659, 523, 0,
+                440, 523, 659, 784, 659, 523, 440, 0, 349, 440, 523, 659, 784, 659, 523, 440,
+                523, 659, 784, 1047, 880, 784, 659, 587, 523, 587, 659, 784, 1047, 880, 784, 0}
+                durs = {
+                140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 280, 100,
+                140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 200, 150,
+                140, 140, 140, 200, 140, 140, 140, 140, 140, 140, 140, 200, 200, 140, 140, 200,
+                200, 140, 140, 140, 140, 140, 140, 200, 200, 200, 140, 140, 140, 140, 280, 150,
+                140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 200, 140, 140, 200,
+                140, 140, 140, 200, 140, 140, 140, 140, 140, 140, 140, 200, 200, 140, 280, 150}
+
+            Case 8 ' Contra Action — E minor, military march, overdriven guitar
+                freqs = {
+                330, 330, 370, 392, 440, 392, 370, 330, 294, 294, 330, 370, 392, 370, 330, 294,
+                330, 392, 440, 494, 523, 494, 440, 392, 440, 494, 523, 587, 659, 587, 523, 494,
+                330, 330, 370, 392, 440, 494, 523, 587, 659, 587, 494, 440, 392, 370, 330, 0,
+                659, 659, 587, 523, 494, 523, 587, 659, 784, 659, 587, 523, 494, 523, 587, 0,
+                262, 294, 330, 370, 392, 370, 330, 294, 262, 294, 330, 392, 440, 392, 330, 294,
+                330, 392, 440, 494, 523, 587, 659, 784, 659, 587, 494, 440, 392, 330, 294, 0}
+                durs = {
+                170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250,
+                170, 170, 170, 200, 170, 170, 170, 250, 170, 170, 170, 200, 200, 170, 170, 250,
+                170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 170, 200, 170, 350, 100,
+                200, 200, 170, 170, 170, 170, 170, 250, 200, 170, 170, 170, 170, 170, 350, 150,
+                170, 170, 170, 170, 200, 170, 170, 250, 170, 170, 170, 200, 200, 170, 170, 250,
+                170, 170, 170, 200, 200, 170, 200, 250, 170, 170, 170, 170, 200, 170, 350, 150}
+
+            Case Else ' Double Dragon — A minor pentatonic, bluesy, gritty guitar
+                freqs = {
+                220, 262, 330, 440, 392, 330, 262, 220, 247, 294, 349, 494, 440, 349, 294, 247,
+                330, 392, 440, 523, 440, 392, 330, 262, 294, 330, 392, 440, 523, 440, 392, 330,
+                220, 262, 330, 440, 392, 330, 262, 220, 294, 330, 392, 440, 392, 330, 294, 0,
+                440, 523, 587, 659, 587, 523, 440, 392, 330, 392, 440, 523, 587, 523, 440, 330,
+                220, 0, 262, 294, 330, 294, 262, 0, 220, 262, 330, 440, 392, 330, 262, 220,
+                330, 392, 440, 523, 587, 523, 440, 392, 330, 262, 294, 330, 440, 392, 330, 0}
+                durs = {
+                190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250,
+                190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250,
+                190, 190, 190, 250, 190, 190, 250, 200, 190, 190, 190, 250, 200, 190, 350, 150,
+                200, 190, 190, 250, 190, 190, 190, 200, 190, 190, 190, 250, 200, 190, 190, 250,
+                250, 150, 200, 200, 250, 200, 350, 150, 190, 190, 190, 250, 190, 190, 190, 250,
+                190, 190, 190, 250, 190, 190, 190, 200, 190, 190, 190, 250, 250, 200, 400, 200}
         End Select
     End Sub
 
     Private Function GenerateMidiBytes() As Byte()
+        Const REF_BPM As Integer = 120   ' Fixed reference for tick calculation
         Dim midi As New List(Of Byte)
-        Dim instruments() As Integer = {73, 80, 10, 81, 38, 19, 88, 80, 29, 27}
-        Dim bpms() As Integer = {50, 60, 54, 56, 36, 44, 29, 58, 56, 48}
-        Dim inst = instruments(Math.Min(_musicStyle, 9))
-        Dim bpmBase = bpms(Math.Min(_musicStyle, 9))
-        Dim bpm = Math.Max(1, CInt(bpmBase * _musicSpeed / 100.0))
-        Dim usPerQN = CInt(60000000.0 / bpm)
-        Dim tpq As Integer = 480
-        Dim freqs() As Integer = Nothing
-        Dim durs() As Integer = Nothing
+        Dim melodyInsts() = {73, 80, 10, 81, 42, 19, 88, 80, 30, 31}
+        Dim bassInsts() = {33, 38, 33, 38, 38, 43, 39, 38, 34, 34}
+        ' Canonical BPM per style at _musicSpeed = 100.
+        ' Zelda=90 lyrical|MegaMan=150 drive|Tetris=140 folk|PacMan=130 bounce
+        ' SpaceInvaders=70 march|Castlevania=100 gothic|Metroid=50 pad
+        ' Galaga=160 arcade|Contra=145 action|DoubleDragon=95 bluesy
+        Dim bpms() = {90, 150, 140, 130, 70, 100, 50, 160, 145, 95}
+        Dim si = Math.Min(_musicStyle, 9)
+        Dim inst = melodyInsts(si), bassInst = bassInsts(si)
+        Dim playBpm = Math.Max(1, CInt(bpms(si) * _musicSpeed / 100.0))
+        Dim usPerQN = CInt(60000000.0 / playBpm), tpq = 480
+
+        Dim freqs() As Integer = Nothing, durs() As Integer = Nothing
         GetMusicData(_musicStyle, freqs, durs)
-        ExtendSong(freqs, durs)
-        Dim trk As New List(Of Byte)
-        MidiVarLen(trk, 0) : trk.Add(&HFF) : trk.Add(&H51) : trk.Add(3)
-        trk.Add(CByte((usPerQN >> 16) And &HFF))
-        trk.Add(CByte((usPerQN >> 8) And &HFF))
-        trk.Add(CByte(usPerQN And &HFF))
-        MidiVarLen(trk, 0) : trk.Add(&HB0) : trk.Add(7)
-        trk.Add(CByte(Math.Min(127, CInt(_musicVolume * 1.27))))
-        MidiVarLen(trk, 0) : trk.Add(&HC0) : trk.Add(CByte(inst))
-        Dim pendDelta As Integer = 0
-        For i = 0 To freqs.Length - 1
-            Dim ticks = CInt(durs(i) * tpq * bpm / 60000.0)
-            If ticks < 1 Then ticks = 1
-            If freqs(i) <= 0 Then
-                pendDelta += ticks
-            Else
-                Dim nt = FreqToMidiNote(freqs(i))
-                MidiVarLen(trk, pendDelta)
-                trk.Add(&H90) : trk.Add(CByte(nt)) : trk.Add(100)
-                Dim onT = CInt(ticks * 0.9) : If onT < 1 Then onT = 1
-                MidiVarLen(trk, onT)
-                trk.Add(&H80) : trk.Add(CByte(nt)) : trk.Add(0)
-                pendDelta = ticks - onT
-            End If
-        Next
-        MidiVarLen(trk, pendDelta) : trk.Add(&HFF) : trk.Add(&H2F) : trk.Add(0)
+
+        ' Double for longer loop (96 -> 192 notes)
+        Dim n = freqs.Length
+        Dim f2(2 * n - 1) As Integer, d2(2 * n - 1) As Integer
+        Array.Copy(freqs, 0, f2, 0, n) : Array.Copy(durs, 0, d2, 0, n)
+        Array.Copy(freqs, 0, f2, n, n) : Array.Copy(durs, 0, d2, n, n)
+        freqs = f2 : durs = d2
+
+        ' Derive bass from melody
+        Dim bassF() As Integer = Nothing, bassD() As Integer = Nothing
+        DeriveBassLine(freqs, durs, bassF, bassD)
+
+        ' Track 0: tempo
+        Dim trk0 As New List(Of Byte)
+        MidiVL(trk0, 0) : trk0.Add(&HFF) : trk0.Add(&H51) : trk0.Add(3)
+        trk0.Add(CByte((usPerQN >> 16) And &HFF))
+        trk0.Add(CByte((usPerQN >> 8) And &HFF))
+        trk0.Add(CByte(usPerQN And &HFF))
+        MidiVL(trk0, 0) : trk0.Add(&HFF) : trk0.Add(&H2F) : trk0.Add(0)
+
+        ' Track 1: melody (channel 0)
+        Dim trk1 As New List(Of Byte)
+        MidiVL(trk1, 0) : trk1.Add(&HB0) : trk1.Add(7)
+        trk1.Add(CByte(Math.Min(127, CInt(_musicVolume * 1.27))))
+        MidiVL(trk1, 0) : trk1.Add(&HC0) : trk1.Add(CByte(inst))
+        WriteMidiNotes(trk1, &H90, &H80, freqs, durs, tpq, REF_BPM, 100)
+        MidiVL(trk1, 0) : trk1.Add(&HFF) : trk1.Add(&H2F) : trk1.Add(0)
+
+        ' Track 2: bass (channel 1)
+        Dim trk2 As New List(Of Byte)
+        MidiVL(trk2, 0) : trk2.Add(&HB1) : trk2.Add(7)
+        trk2.Add(CByte(Math.Min(127, CInt(_musicVolume * 1.1))))
+        MidiVL(trk2, 0) : trk2.Add(&HC1) : trk2.Add(CByte(bassInst))
+        WriteMidiNotes(trk2, &H91, &H81, bassF, bassD, tpq, REF_BPM, 75)
+        MidiVL(trk2, 0) : trk2.Add(&HFF) : trk2.Add(&H2F) : trk2.Add(0)
+
+        ' Header: format 1, 3 tracks
         midi.AddRange(Encoding.ASCII.GetBytes("MThd"))
-        MidiBE32(midi, 6) : MidiBE16(midi, 0) : MidiBE16(midi, 1) : MidiBE16(midi, tpq)
+        BE32(midi, 6) : BE16(midi, 1) : BE16(midi, 3) : BE16(midi, tpq)
         midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
-        MidiBE32(midi, trk.Count) : midi.AddRange(trk)
+        BE32(midi, trk0.Count) : midi.AddRange(trk0)
+        midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
+        BE32(midi, trk1.Count) : midi.AddRange(trk1)
+        midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
+        BE32(midi, trk2.Count) : midi.AddRange(trk2)
         Return midi.ToArray()
     End Function
 
-    Private Function FreqToMidiNote(freq As Integer) As Integer
-        If freq <= 0 Then Return 60
-        Dim n = CInt(Math.Round(69.0 + 12.0 * Math.Log(freq / 440.0) / Math.Log(2.0)))
-        Return Math.Max(0, Math.Min(127, n))
-    End Function
+    Private Sub WriteMidiNotes(trk As List(Of Byte), noteOnCmd As Byte, noteOffCmd As Byte,
+                               freqs() As Integer, durs() As Integer,
+                               tpq As Integer, bpm As Integer, baseVel As Integer)
+        Dim pd = 0
+        For i = 0 To freqs.Length - 1
+            Dim ticks = CInt(durs(i) * tpq * bpm / 60000.0)
+            If ticks < 1 Then ticks = 1
+            If freqs(i) <= 0 Then pd += ticks : Continue For
+            Dim nt = CInt(Math.Max(0, Math.Min(127, Math.Round(69.0 + 12.0 * Math.Log(freqs(i) / 440.0) / Math.Log(2.0)))))
+            Dim vel = CByte(Math.Min(127, baseVel + If(i Mod 4 = 0, 18, If(i Mod 4 = 2, 8, 0))))
+            MidiVL(trk, pd) : trk.Add(noteOnCmd) : trk.Add(CByte(nt)) : trk.Add(vel)
+            Dim onT = CInt(ticks * 0.85) : If onT < 1 Then onT = 1
+            MidiVL(trk, onT) : trk.Add(noteOffCmd) : trk.Add(CByte(nt)) : trk.Add(0)
+            pd = ticks - onT
+        Next
+    End Sub
 
-    Private Sub MidiVarLen(data As List(Of Byte), value As Integer)
-        If value < 0 Then value = 0
-        If value < &H80 Then
-            data.Add(CByte(value))
-        ElseIf value < &H4000 Then
-            data.Add(CByte((value >> 7) Or &H80))
-            data.Add(CByte(value And &H7F))
-        ElseIf value < &H200000 Then
-            data.Add(CByte((value >> 14) Or &H80))
-            data.Add(CByte(((value >> 7) And &H7F) Or &H80))
-            data.Add(CByte(value And &H7F))
+    Private Sub DeriveBassLine(melFreqs() As Integer, melDurs() As Integer,
+                               ByRef bassFreqs() As Integer, ByRef bassDurs() As Integer)
+        Dim bf As New List(Of Integer), bd As New List(Of Integer)
+        For i = 0 To melFreqs.Length - 1 Step 4
+            Dim root = 0, dur = 0
+            For j = i To Math.Min(i + 3, melFreqs.Length - 1)
+                dur += melDurs(j)
+                If melFreqs(j) > 0 AndAlso (root = 0 OrElse melFreqs(j) < root) Then root = melFreqs(j)
+            Next
+            If root > 0 Then
+                While root > 300 : root = root \ 2 : End While
+                Dim fifth = CInt(root * 1.5)
+                While fifth > 400 : fifth = fifth \ 2 : End While
+                bf.Add(root) : bd.Add(CInt(dur * 0.65))
+                bf.Add(fifth) : bd.Add(CInt(dur * 0.25))
+                bf.Add(0) : bd.Add(CInt(dur * 0.1))
+            Else
+                bf.Add(0) : bd.Add(dur)
+            End If
+        Next
+        bassFreqs = bf.ToArray() : bassDurs = bd.ToArray()
+    End Sub
+
+    Private Sub MidiVL(d As List(Of Byte), v As Integer)
+        If v < 0 Then v = 0
+        If v < &H80 Then
+            d.Add(CByte(v))
+        ElseIf v < &H4000 Then
+            d.Add(CByte((v >> 7) Or &H80))
+            d.Add(CByte(v And &H7F))
+        ElseIf v < &H200000 Then
+            d.Add(CByte((v >> 14) Or &H80))
+            d.Add(CByte(((v >> 7) And &H7F) Or &H80))
+            d.Add(CByte(v And &H7F))
         Else
-            data.Add(CByte((value >> 21) Or &H80))
-            data.Add(CByte(((value >> 14) And &H7F) Or &H80))
-            data.Add(CByte(((value >> 7) And &H7F) Or &H80))
-            data.Add(CByte(value And &H7F))
+            d.Add(CByte((v >> 21) Or &H80))
+            d.Add(CByte(((v >> 14) And &H7F) Or &H80))
+            d.Add(CByte(((v >> 7) And &H7F) Or &H80))
+            d.Add(CByte(v And &H7F))
         End If
     End Sub
 
-    Private Sub MidiBE32(data As List(Of Byte), v As Integer)
-        data.Add(CByte((v >> 24) And &HFF)) : data.Add(CByte((v >> 16) And &HFF))
-        data.Add(CByte((v >> 8) And &HFF)) : data.Add(CByte(v And &HFF))
+    Private Sub BE32(d As List(Of Byte), v As Integer)
+        d.Add(CByte((v >> 24) And &HFF))
+        d.Add(CByte((v >> 16) And &HFF))
+        d.Add(CByte((v >> 8) And &HFF))
+        d.Add(CByte(v And &HFF))
     End Sub
 
-    Private Sub MidiBE16(data As List(Of Byte), v As Integer)
-        data.Add(CByte((v >> 8) And &HFF)) : data.Add(CByte(v And &HFF))
-    End Sub
-
-    Private Sub ExtendSong(ByRef freqs() As Integer, ByRef durs() As Integer)
-        If freqs Is Nothing OrElse durs Is Nothing OrElse freqs.Length = 0 Then Return
-        Dim n = freqs.Length
-        Dim freqs2(2 * n - 1) As Integer
-        Dim durs2(2 * n - 1) As Integer
-        Array.Copy(freqs, 0, freqs2, 0, n)
-        Array.Copy(durs, 0, durs2, 0, n)
-        Array.Copy(freqs, 0, freqs2, n, n)
-        Array.Copy(durs, 0, durs2, n, n)
-        freqs = freqs2
-        durs = durs2
+    Private Sub BE16(d As List(Of Byte), v As Integer)
+        d.Add(CByte((v >> 8) And &HFF))
+        d.Add(CByte(v And &HFF))
     End Sub
 
     Private Sub PlaySFX(frequency As Integer, durationMs As Integer)
@@ -831,7 +1043,7 @@ Public Class Form1
 
     Private Sub PreGenerateAllMusic()
         Try
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v2")
             If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
             ReDim _musicFiles(9)
             For i = 0 To 9
@@ -852,6 +1064,7 @@ Public Class Form1
             If _musicStyle < 0 OrElse _musicStyle >= _musicFiles.Length Then Return
             Dim path = _musicFiles(_musicStyle)
             If String.IsNullOrEmpty(path) Then Return
+            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
             File.WriteAllBytes(path, GenerateMidiBytes())
             _musicTempFile = path
@@ -864,12 +1077,15 @@ Public Class Form1
             If _musicFiles Is Nothing Then Return
             _musicTempFile = _musicFiles(_musicStyle)
             If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
+            System.Diagnostics.Debug.WriteLine($"[MUSIC-MAIN] Start style={_musicStyle} vol={GetEffectiveMusicVolume()} speed={_musicSpeed}")
+            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("open """ & _musicTempFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
             Dim vol = CInt(GetEffectiveMusicVolume() * 10)
             mciSendString("setaudio bgmusic volume to " & vol.ToString(), Nothing, 0, IntPtr.Zero)
             mciSendString("play bgmusic notify", Nothing, 0, Me.Handle)
             _musicPlaying = True
+            _musicLastStartMs = Environment.TickCount64
         Catch
         End Try
     End Sub
@@ -879,12 +1095,14 @@ Public Class Form1
             If _musicFiles Is Nothing Then Return
             _musicTempFile = _musicFiles(_musicStyle)
             If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
+            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("open """ & _musicTempFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
             Dim vol = CInt(GetEffectiveMusicVolume() * 10)
             mciSendString("setaudio bgmusic volume to " & vol.ToString(), Nothing, 0, IntPtr.Zero)
             mciSendString("play bgmusic notify", Nothing, 0, Me.Handle)
             _musicPlaying = True
+            _musicLastStartMs = Environment.TickCount64
         Catch
         End Try
     End Sub
@@ -923,22 +1141,24 @@ Public Class Form1
 
     Private Sub StartHighScoreMusic()
         Try
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v2")
             If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
             _highScoreMusicFile = Path.Combine(tmpDir, "highscore.mid")
             File.WriteAllBytes(_highScoreMusicFile, GenerateHighScoreMidiBytes())
+            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("open """ & _highScoreMusicFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
             Dim vol = CInt(GetEffectiveMusicVolume() * 10)
             mciSendString("setaudio bgmusic volume to " & vol.ToString(), Nothing, 0, IntPtr.Zero)
             mciSendString("play bgmusic notify", Nothing, 0, Me.Handle)
             _musicPlaying = True
+            _musicLastStartMs = Environment.TickCount64
             _usingHighScoreMusic = True
         Catch
         End Try
     End Sub
 
-    Private Function GenerateHighScoreMidiBytes() As Byte()
+    Private Function GenerateHighScoreMidiBytes
         Dim oldStyle = _musicStyle
         _musicStyle = 6
         Dim bytes = GenerateMidiBytes()
@@ -965,7 +1185,7 @@ Public Class Form1
                     End If
                 Next
             End If
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v2")
             If Directory.Exists(tmpDir) Then
                 Try : Directory.Delete(tmpDir, True) : Catch : End Try
             End If
@@ -997,6 +1217,53 @@ Public Class Form1
         Me.ClientSize = New Size(newW, newH)
         Me.CenterToScreen()
         InitStarField()
+    End Sub
+#End Region
+
+#Region "Sprite System"
+    Private Function FindAssetsDir() As String
+        Dim base = AppDomain.CurrentDomain.BaseDirectory
+        Dim d = Path.Combine(base, "Assets")
+        If Directory.Exists(d) Then Return d
+        Dim up = base
+        For i = 1 To 8
+            up = Path.GetDirectoryName(up)
+            If String.IsNullOrEmpty(up) Then Exit For
+            Dim wpf = Path.Combine(up, "anime finder wpf", "Assets")
+            If Directory.Exists(wpf) Then Return wpf
+        Next
+        Return Nothing
+    End Function
+
+    Private Sub LoadSprites()
+        Try
+            Dim dir = FindAssetsDir()
+            If String.IsNullOrEmpty(dir) Then Return
+            For Each file In Directory.GetFiles(dir, "*.png", SearchOption.AllDirectories)
+                Try
+                    Dim rel = file.Substring(dir.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    Dim folder = Path.GetDirectoryName(rel)
+                    Dim stem = Path.GetFileNameWithoutExtension(rel)
+                    Dim key = If(String.IsNullOrEmpty(folder), stem, folder & "/" & stem).ToLower().Replace("\"c, "/"c)
+                    If Not _sprites.ContainsKey(key) Then _sprites(key) = New Bitmap(file)
+                Catch
+                End Try
+            Next
+        Catch
+        End Try
+    End Sub
+
+    Private Function TryGetSprite(key As String) As Bitmap
+        Dim bmp As Bitmap = Nothing
+        _sprites.TryGetValue(key.ToLower(), bmp)
+        Return bmp
+    End Function
+
+    Private Sub DisposeSprites()
+        For Each kvp In _sprites.Values
+            Try : kvp.Dispose() : Catch : End Try
+        Next
+        _sprites.Clear()
     End Sub
 #End Region
 
@@ -1348,6 +1615,12 @@ Public Class Form1
 
 #Region "Drawing"
     Private Sub DrawStarField(g As Graphics)
+        Dim bgKey = If(_state = GameState.Menu OrElse _state = GameState.HighScore,
+                       "tiles/menu_background", "tiles/game_background")
+        Dim bgSpr = TryGetSprite(bgKey)
+        If bgSpr IsNot Nothing Then
+            g.DrawImage(bgSpr, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+        End If
         For i = 0 To _starFieldX.Length - 1
             Dim bright = _starFieldBright(i)
             Dim twinkle = CInt(Math.Sin(_frameCount * 0.05 + i) * 40)
@@ -1426,15 +1699,30 @@ Public Class Form1
 
     Private Sub DrawHUD(g As Graphics)
         Using f As New Font("Segoe UI", 13, FontStyle.Bold)
+            ' Score with optional star icon
+            Dim starSpr = TryGetSprite("ui/star")
+            If starSpr IsNot Nothing Then
+                g.DrawImage(starSpr, 15, 11, 20, 20)
+            End If
             Using br As New SolidBrush(Color.White)
-                g.DrawString($"SCORE: {_score}", f, br, 15, 12)
+                g.DrawString($"SCORE: {_score}", f, br, If(starSpr IsNot Nothing, 38, 15), 12)
             End Using
             DrawCenteredText(g, $"LEVEL {_level}", f, Color.FromArgb(180, 200, 255), 12)
-            Dim lt = $"LIVES: {New String(ChrW(&H2665), _lives)}"
-            Dim sz = g.MeasureString(lt, f)
-            Using br As New SolidBrush(Color.FromArgb(255, 100, 130))
-                g.DrawString(lt, f, br, LOGICAL_WIDTH - sz.Width - 15, 12)
-            End Using
+            ' Lives with optional heart icons
+            Dim heartSpr = TryGetSprite("ui/heart")
+            If heartSpr IsNot Nothing Then
+                Dim hSz = 22, hPad = 2
+                Dim hX = CSng(LOGICAL_WIDTH - 15 - (hSz + hPad) * _lives)
+                For h = 0 To _lives - 1
+                    g.DrawImage(heartSpr, hX + h * (hSz + hPad), 10, hSz, hSz)
+                Next
+            Else
+                Dim lt = $"LIVES: {New String(ChrW(&H2665), _lives)}"
+                Dim lsz = g.MeasureString(lt, f)
+                Using br As New SolidBrush(Color.FromArgb(255, 100, 130))
+                    g.DrawString(lt, f, br, LOGICAL_WIDTH - lsz.Width - 15, 12)
+                End Using
+            End If
             If _speedBoost Then
                 Dim bt = ChrW(&H26A1) & " 2x SPEED"
                 Dim bsz = g.MeasureString(bt, f)
@@ -1466,15 +1754,22 @@ Public Class Form1
         For Each bk In _bricks
             If Not bk.Alive Then Continue For
             Dim r = bk.Rect
-            Using br As New LinearGradientBrush(r, bk.Color1, bk.Color2, LinearGradientMode.Vertical)
-                Using rr = RoundedRect(r, 4)
-                    g.FillPath(br, rr)
+            Dim isDamaged = bk.Color1.R >= 195 AndAlso bk.Color1.G >= 195 AndAlso bk.Color1.B >= 195
+            Dim sprKey = If(isDamaged, $"sprites/brick_{bk.Row Mod 7}_damaged", $"sprites/brick_{bk.Row Mod 7}")
+            Dim brickSpr = TryGetSprite(sprKey)
+            If brickSpr IsNot Nothing Then
+                g.DrawImage(brickSpr, r)
+            Else
+                Using br As New LinearGradientBrush(r, bk.Color1, bk.Color2, LinearGradientMode.Vertical)
+                    Using rr = RoundedRect(r, 4)
+                        g.FillPath(br, rr)
+                    End Using
                 End Using
-            End Using
-            Dim sr2 As New RectangleF(r.X + 2, r.Y + 1, r.Width - 4, r.Height / 2.5F)
-            Using br As New SolidBrush(Color.FromArgb(50, 255, 255, 255))
-                g.FillRectangle(br, sr2)
-            End Using
+                Dim sr2 As New RectangleF(r.X + 2, r.Y + 1, r.Width - 4, r.Height / 2.5F)
+                Using br As New SolidBrush(Color.FromArgb(50, 255, 255, 255))
+                    g.FillRectangle(br, sr2)
+                End Using
+            End If
             If _colorblindMode Then
                 Using rr = RoundedRect(r, 4)
                     Using pen As New Pen(Color.White, 2)
@@ -1508,20 +1803,33 @@ Public Class Form1
         Using br As New SolidBrush(Color.FromArgb(30, paddleC1))
             g.FillEllipse(br, _paddleX - 10, py + 5, _paddleWidth + 20, 20)
         End Using
-        Using rr = RoundedRect(pr, 7)
-            Using br As New LinearGradientBrush(pr, paddleC1, paddleC2, LinearGradientMode.Vertical)
-                g.FillPath(br, rr)
-            End Using
-            Dim hl As New RectangleF(_paddleX + 4, py + 1, _paddleWidth - 8, PADDLE_HEIGHT / 2.5F)
-            Using br As New SolidBrush(Color.FromArgb(80, 255, 255, 255))
-                g.FillRectangle(br, hl)
-            End Using
+        Dim paddleKey = If(_paddleWidth > PADDLE_WIDTH, "sprites/paddle_wide", "sprites/paddle")
+        Dim paddleSpr = TryGetSprite(paddleKey)
+        If paddleSpr IsNot Nothing Then
+            g.DrawImage(paddleSpr, pr)
             If _colorblindMode Then
-                Using pen As New Pen(Color.White, 2)
-                    g.DrawPath(pen, rr)
+                Using rr = RoundedRect(pr, 7)
+                    Using pen As New Pen(Color.White, 2)
+                        g.DrawPath(pen, rr)
+                    End Using
                 End Using
             End If
-        End Using
+        Else
+            Using rr = RoundedRect(pr, 7)
+                Using br As New LinearGradientBrush(pr, paddleC1, paddleC2, LinearGradientMode.Vertical)
+                    g.FillPath(br, rr)
+                End Using
+                Dim hl As New RectangleF(_paddleX + 4, py + 1, _paddleWidth - 8, PADDLE_HEIGHT / 2.5F)
+                Using br As New SolidBrush(Color.FromArgb(80, 255, 255, 255))
+                    g.FillRectangle(br, hl)
+                End Using
+                If _colorblindMode Then
+                    Using pen As New Pen(Color.White, 2)
+                        g.DrawPath(pen, rr)
+                    End Using
+                End If
+            End Using
+        End If
     End Sub
 
     Private Sub DrawBalls(g As Graphics)
@@ -1547,6 +1855,8 @@ Public Class Form1
     End Sub
 
     Private Sub DrawPowerUps(g As Graphics)
+        Dim puSprKeys() As String = {"ui/powerup_grow", "ui/powerup_life", "ui/powerup_multi",
+                                      "ui/powerup_shrink", "ui/powerup_mega", "ui/powerup_slow", "ui/powerup_fast"}
         For Each pu In _powerUps
             If Not pu.Active Then Continue For
             Dim bob = CSng(Math.Sin(_frameCount * 0.1) * 3)
@@ -1554,15 +1864,31 @@ Public Class Form1
             Using br As New SolidBrush(Color.FromArgb(40, pu.Color1))
                 g.FillEllipse(br, pu.X - 14, cy - 14, 28, 28)
             End Using
-            Using br As New SolidBrush(Color.FromArgb(200, pu.Color1.R, pu.Color1.G, pu.Color1.B))
-                g.FillEllipse(br, CSng(pu.X - POWERUP_SIZE / 2), CSng(cy - POWERUP_SIZE / 2), CSng(POWERUP_SIZE), CSng(POWERUP_SIZE))
-            End Using
-            Using f As New Font("Segoe UI", 18, FontStyle.Bold)
-                Dim ts = g.MeasureString(pu.Symbol, f)
-                Using br As New SolidBrush(Color.White)
-                    g.DrawString(pu.Symbol, f, br, pu.X - ts.Width / 2, cy - ts.Height / 2)
+            Dim puIdx = CInt(pu.PType)
+            Dim puSpr = If(puIdx >= 0 AndAlso puIdx < puSprKeys.Length, TryGetSprite(puSprKeys(puIdx)), Nothing)
+            If puSpr IsNot Nothing Then
+                Dim sz2 = CSng(POWERUP_SIZE)
+                g.DrawImage(puSpr, pu.X - sz2 / 2, cy - sz2 / 2, sz2, sz2)
+                Using f As New Font("Segoe UI", 11, FontStyle.Bold)
+                    Dim ts = g.MeasureString(pu.Symbol, f)
+                    Using brSh As New SolidBrush(Color.FromArgb(180, 0, 0, 0))
+                        g.DrawString(pu.Symbol, f, brSh, pu.X - ts.Width / 2 + 1, cy - ts.Height / 2 + 1)
+                    End Using
+                    Using brLbl As New SolidBrush(Color.White)
+                        g.DrawString(pu.Symbol, f, brLbl, pu.X - ts.Width / 2, cy - ts.Height / 2)
+                    End Using
                 End Using
-            End Using
+            Else
+                Using br As New SolidBrush(Color.FromArgb(200, pu.Color1.R, pu.Color1.G, pu.Color1.B))
+                    g.FillEllipse(br, CSng(pu.X - POWERUP_SIZE / 2), CSng(cy - POWERUP_SIZE / 2), CSng(POWERUP_SIZE), CSng(POWERUP_SIZE))
+                End Using
+                Using f As New Font("Segoe UI", 18, FontStyle.Bold)
+                    Dim ts = g.MeasureString(pu.Symbol, f)
+                    Using br As New SolidBrush(Color.White)
+                        g.DrawString(pu.Symbol, f, br, pu.X - ts.Width / 2, cy - ts.Height / 2)
+                    End Using
+                End Using
+            End If
         Next
     End Sub
 
@@ -1622,9 +1948,14 @@ Public Class Form1
                 g.DrawString(countText, f, br, cx, cy)
             End Using
         End Using
-        Using fSub As New Font("Segoe UI", 14, FontStyle.Regular)
-            DrawCenteredText(g, "GET READY!", fSub, Color.FromArgb(180, 200, 200, 220), LOGICAL_HEIGHT / 2.0F + 50)
-        End Using
+        Dim grSpr = TryGetSprite("ui/text_getready")
+        If grSpr IsNot Nothing Then
+            g.DrawImage(grSpr, CSng((LOGICAL_WIDTH - 240) / 2), LOGICAL_HEIGHT / 2.0F + 50, 240, 40)
+        Else
+            Using fSub As New Font("Segoe UI", 14, FontStyle.Regular)
+                DrawCenteredText(g, "GET READY!", fSub, Color.FromArgb(180, 200, 200, 220), LOGICAL_HEIGHT / 2.0F + 50)
+            End Using
+        End If
     End Sub
 
     Private Sub DrawOptions(g As Graphics)
@@ -1644,6 +1975,11 @@ Public Class Form1
             End Using
         End Using
         Dim y = py + 12
+        Dim gearSpr = TryGetSprite("ui/gear")
+        If gearSpr IsNot Nothing Then
+            Dim gs2 = 28
+            g.DrawImage(gearSpr, CSng(LOGICAL_WIDTH / 2) - 118, y + 4, gs2, gs2)
+        End If
         Using ft As New Font("Segoe UI", 22, FontStyle.Bold)
             DrawCenteredText(g, "OPTIONS", ft, Color.FromArgb(100, 200, 255), y)
         End Using
@@ -1781,9 +2117,14 @@ Public Class Form1
                 g.DrawPath(pen, rr)
             End Using
         End Using
-        Using ft As New Font("Segoe UI", 30, FontStyle.Bold)
-            DrawCenteredText(g, "GAME OVER", ft, Color.FromArgb(255, 80, 100), py + 15)
-        End Using
+        Dim goSpr = TryGetSprite("ui/text_gameover")
+        If goSpr IsNot Nothing Then
+            g.DrawImage(goSpr, CInt((LOGICAL_WIDTH - 320) / 2), CInt(py + 12), 320, 64)
+        Else
+            Using ft As New Font("Segoe UI", 30, FontStyle.Bold)
+                DrawCenteredText(g, "GAME OVER", ft, Color.FromArgb(255, 80, 100), py + 15)
+            End Using
+        End If
         Using fs As New Font("Segoe UI", 18, FontStyle.Bold)
             DrawCenteredText(g, $"Final Score: {_score}", fs, Color.FromArgb(255, 220, 100), py + 65)
         End Using
@@ -1806,6 +2147,14 @@ Public Class Form1
             End Using
         End If
         y = py + 210
+        Dim trophySpr = TryGetSprite("ui/trophy")
+        Dim lbSpr = TryGetSprite("ui/leaderboard")
+        If trophySpr IsNot Nothing Then
+            g.DrawImage(trophySpr, CSng(LOGICAL_WIDTH / 2 - 115), y + 2, 24, 24)
+        End If
+        If lbSpr IsNot Nothing Then
+            g.DrawImage(lbSpr, CSng(LOGICAL_WIDTH / 2 + 92), y + 2, 24, 24)
+        End If
         Using fHeader As New Font("Segoe UI", 14, FontStyle.Bold)
             DrawCenteredText(g, "HIGH SCORES", fHeader, Color.FromArgb(100, 200, 255), y)
         End Using
@@ -1821,6 +2170,13 @@ Public Class Form1
                     Dim sc = rec.PlayerScore.ToString("N0").PadLeft(10)
                     Dim ec = If(_highScoreSaved AndAlso rec.PlayerName = _nameInput AndAlso rec.PlayerScore = _score,
                                 Color.FromArgb(255, 220, 100), Color.FromArgb(195, 195, 215))
+                    If i = 0 Then
+                        Dim goldSpr = TryGetSprite("ui/medal_gold")
+                        If goldSpr IsNot Nothing Then g.DrawImage(goldSpr, CSng(LOGICAL_WIDTH / 2 - 230), y + 2, 18, 18)
+                    ElseIf i = 1 Then
+                        Dim silverSpr = TryGetSprite("ui/medal_silver")
+                        If silverSpr IsNot Nothing Then g.DrawImage(silverSpr, CSng(LOGICAL_WIDTH / 2 - 230), y + 2, 18, 18)
+                    End If
                     Using br As New SolidBrush(ec)
                         Dim text = $"{rank}. {nm} {sc}"
                         Dim sz = g.MeasureString(text, fe)
@@ -1836,14 +2192,33 @@ Public Class Form1
         Using br As New SolidBrush(Color.FromArgb(180, 0, 0, 20))
             g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
         End Using
+        If Not animated Then
+            Dim pauseSpr = TryGetSprite("ui/pause")
+            If pauseSpr IsNot Nothing Then
+                Dim ps = 48
+                g.DrawImage(pauseSpr, CInt((LOGICAL_WIDTH - ps) / 2), CInt(LOGICAL_HEIGHT / 2 - 120), ps, ps)
+            End If
+        End If
         Dim titleSize As Single = If(animated, CSng(40 + Math.Sin(_frameCount * 0.08) * 6), 40.0F)
         Dim pulse = CSng((Math.Sin(_frameCount * 0.05) + 1) / 2)
         Dim titleColor As Color = If(animated,
             Color.FromArgb(255, CInt(180 + pulse * 75), CInt(180 + pulse * 75)),
             Color.White)
-        Using ft As New Font("Segoe UI", titleSize, FontStyle.Bold)
-            DrawCenteredText(g, title, ft, titleColor, LOGICAL_HEIGHT / 2 - 60)
-        End Using
+        If animated Then
+            Dim winSpr = TryGetSprite("ui/text_youwin")
+            If winSpr IsNot Nothing Then
+                Dim wW = 280, wH = 58
+                g.DrawImage(winSpr, CInt((LOGICAL_WIDTH - wW) / 2), CInt(LOGICAL_HEIGHT / 2 - 80), wW, wH)
+            Else
+                Using ft As New Font("Segoe UI", titleSize, FontStyle.Bold)
+                    DrawCenteredText(g, title, ft, titleColor, LOGICAL_HEIGHT / 2 - 60)
+                End Using
+            End If
+        Else
+            Using ft As New Font("Segoe UI", titleSize, FontStyle.Bold)
+                DrawCenteredText(g, title, ft, titleColor, LOGICAL_HEIGHT / 2 - 60)
+            End Using
+        End If
         Using fs As New Font("Segoe UI", 16, FontStyle.Regular)
             DrawCenteredText(g, subtitle, fs, Color.FromArgb(200, 200, 220), LOGICAL_HEIGHT / 2 + 10)
         End Using

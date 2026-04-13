@@ -13,12 +13,26 @@
     <Compile Remove="anime finder wpf\**" />
     <None Remove="anime finder wpf\**" />
     <EmbeddedResource Remove="anime finder wpf\**" />
+    <Compile Remove="anime finder macos\**" />
+    <None Remove="anime finder macos\**" />
+    <EmbeddedResource Remove="anime finder macos\**" />
   </ItemGroup>
 
   <ItemGroup>
     <Import Include="System.Data" />
     <Import Include="System.Drawing" />
     <Import Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="anime finder macos\BrickBlastMacOS.sln" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="anime finder wpf\Assets\**\*">
+      <Link>Assets\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,11 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BrickBlastMacOS"
+        x:Class="BrickBlastMacOS.MainWindow"
+        Title="Curtis Loop: Brick Blast — macOS"
+        Width="1200" Height="867"
+        MinWidth="640" MinHeight="480"
+        Background="#0F0F1E"
+        WindowStartupLocation="CenterScreen">
+    <local:GameCanvas x:Name="Game" Focusable="True" />
+</Window>

@@ -1,0 +1,53 @@
+# Manual Downloads Needed
+
+Assets that could not be auto-downloaded. Download manually and extract to the listed folder.
+
+
+## Free Breakout Brick Breaker Assets by Ethereal Regions
+- Page: https://ethereal-regions.itch.io/free-breakout-brick-breaker-assets
+- License: CC0
+- Reason: Source requires interactive download (itch.io name-your-price gate)
+- Action: Download manually, extract to ExternalAssets/unpacked/itch-breakout
+
+
+## Kenney UI Pack
+- Page: https://kenney.nl/assets/ui-pack
+- License: CC0
+- Reason: Could not find ZIP download link on page
+- Action: Download manually, extract to ExternalAssets/unpacked/kenney-ui-pack
+
+
+## Kenney Pixel UI Pack
+- Page: https://kenney.nl/assets/pixel-ui-pack
+- License: CC0
+- Reason: Could not find ZIP download link on page
+- Action: Download manually, extract to ExternalAssets/unpacked/kenney-pixel-ui-pack
+
+
+## Kenney Game Icons
+- Page: https://kenney.nl/assets/game-icons
+- License: CC0
+- Reason: Could not find ZIP download link on page
+- Action: Download manually, extract to ExternalAssets/unpacked/kenney-game-icons
+
+
+## Kenney Input Prompts
+- Page: https://kenney.nl/assets/input-prompts
+- License: CC0
+- Reason: Could not find ZIP download link on page
+- Action: Download manually, extract to ExternalAssets/unpacked/kenney-input-prompts
+
+
+## Kenney Brick Pack
+- Page: https://kenney.nl/assets/brick-pack
+- License: CC0
+- Reason: Could not find ZIP download link on page
+- Action: Download manually, extract to ExternalAssets/unpacked/kenney-brick-pack
+
+
+## Kenney Platformer Bricks
+- Page: https://kenney.nl/assets/platformer-bricks
+- License: CC0
+- Reason: Could not find ZIP download link on page
+- Action: Download manually, extract to ExternalAssets/unpacked/kenney-platformer-bricks
+
