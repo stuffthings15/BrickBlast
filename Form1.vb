@@ -870,13 +870,15 @@ Public Class Form1
         Dim midi As New List(Of Byte)
         Dim melodyInsts() = {73, 80, 10, 81, 42, 19, 88, 80, 30, 31}
         Dim bassInsts() = {33, 38, 33, 38, 38, 43, 39, 38, 34, 34}
+        ' Harmony: pad/strings/choir in mid-register at reduced velocity
+        Dim harmInsts() = {48, 80, 52, 71, 43, 19, 92, 80, 28, 28}
         ' Canonical BPM per style at _musicSpeed = 100.
         ' Zelda=90 lyrical|MegaMan=150 drive|Tetris=140 folk|PacMan=130 bounce
         ' SpaceInvaders=70 march|Castlevania=100 gothic|Metroid=50 pad
         ' Galaga=160 arcade|Contra=145 action|DoubleDragon=95 bluesy
         Dim bpms() = {90, 150, 140, 130, 70, 100, 50, 160, 145, 95}
         Dim si = Math.Min(_musicStyle, 9)
-        Dim inst = melodyInsts(si), bassInst = bassInsts(si)
+        Dim inst = melodyInsts(si), bassInst = bassInsts(si), harmInst = harmInsts(si)
         Dim playBpm = Math.Max(1, CInt(bpms(si) * _musicSpeed / 100.0))
         Dim usPerQN = CInt(60000000.0 / playBpm), tpq = 480
 
@@ -890,9 +892,11 @@ Public Class Form1
         Array.Copy(freqs, 0, f2, n, n) : Array.Copy(durs, 0, d2, n, n)
         freqs = f2 : durs = d2
 
-        ' Derive bass from melody
+        ' Derive bass and harmony from melody
         Dim bassF() As Integer = Nothing, bassD() As Integer = Nothing
         DeriveBassLine(freqs, durs, bassF, bassD)
+        Dim harmF() As Integer = Nothing, harmD() As Integer = Nothing
+        DeriveHarmonyTrack(freqs, durs, harmF, harmD)
 
         ' Track 0: tempo
         Dim trk0 As New List(Of Byte)
@@ -918,15 +922,25 @@ Public Class Form1
         WriteMidiNotes(trk2, &H91, &H81, bassF, bassD, tpq, REF_BPM, 75)
         MidiVL(trk2, 0) : trk2.Add(&HFF) : trk2.Add(&H2F) : trk2.Add(0)
 
-        ' Header: format 1, 3 tracks
+        ' Track 3: harmony/pad (channel 2)
+        Dim trk3 As New List(Of Byte)
+        MidiVL(trk3, 0) : trk3.Add(&HB2) : trk3.Add(7)
+        trk3.Add(CByte(Math.Min(127, CInt(_musicVolume * 0.9))))
+        MidiVL(trk3, 0) : trk3.Add(&HC2) : trk3.Add(CByte(harmInst))
+        WriteMidiNotes(trk3, &H92, &H82, harmF, harmD, tpq, REF_BPM, 55)
+        MidiVL(trk3, 0) : trk3.Add(&HFF) : trk3.Add(&H2F) : trk3.Add(0)
+
+        ' Header: format 1, 4 tracks
         midi.AddRange(Encoding.ASCII.GetBytes("MThd"))
-        BE32(midi, 6) : BE16(midi, 1) : BE16(midi, 3) : BE16(midi, tpq)
+        BE32(midi, 6) : BE16(midi, 1) : BE16(midi, 4) : BE16(midi, tpq)
         midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
         BE32(midi, trk0.Count) : midi.AddRange(trk0)
         midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
         BE32(midi, trk1.Count) : midi.AddRange(trk1)
         midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
         BE32(midi, trk2.Count) : midi.AddRange(trk2)
+        midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
+        BE32(midi, trk3.Count) : midi.AddRange(trk3)
         Return midi.ToArray()
     End Function
 
@@ -968,6 +982,29 @@ Public Class Form1
             End If
         Next
         bassFreqs = bf.ToArray() : bassDurs = bd.ToArray()
+    End Sub
+
+    Private Sub DeriveHarmonyTrack(melFreqs() As Integer, melDurs() As Integer,
+                                   ByRef harmFreqs() As Integer, ByRef harmDurs() As Integer)
+        Dim hf As New List(Of Integer), hd As New List(Of Integer)
+        For i = 0 To melFreqs.Length - 1 Step 8
+            Dim root = 0, dur = 0
+            For j = i To Math.Min(i + 7, melFreqs.Length - 1)
+                dur += melDurs(j)
+                If melFreqs(j) > 0 AndAlso (root = 0 OrElse melFreqs(j) < root) Then root = melFreqs(j)
+            Next
+            If root > 0 Then
+                While root > 520 : root = root \ 2 : End While
+                While root < 260 : root = root * 2 : End While
+                Dim fifth = CInt(root * 1.498)
+                hf.Add(root) : hd.Add(CInt(dur * 0.48))
+                hf.Add(fifth) : hd.Add(CInt(dur * 0.38))
+                hf.Add(0) : hd.Add(CInt(dur * 0.14))
+            Else
+                hf.Add(0) : hd.Add(dur)
+            End If
+        Next
+        harmFreqs = hf.ToArray() : harmDurs = hd.ToArray()
     End Sub
 
     Private Sub MidiVL(d As List(Of Byte), v As Integer)
@@ -1043,7 +1080,7 @@ Public Class Form1
 
     Private Sub PreGenerateAllMusic()
         Try
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v2")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v3")
             If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
             ReDim _musicFiles(9)
             For i = 0 To 9
@@ -1141,7 +1178,7 @@ Public Class Form1
 
     Private Sub StartHighScoreMusic()
         Try
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v2")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v3")
             If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
             _highScoreMusicFile = Path.Combine(tmpDir, "highscore.mid")
             File.WriteAllBytes(_highScoreMusicFile, GenerateHighScoreMidiBytes())
@@ -1185,7 +1222,7 @@ Public Class Form1
                     End If
                 Next
             End If
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v2")
+            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v3")
             If Directory.Exists(tmpDir) Then
                 Try : Directory.Delete(tmpDir, True) : Catch : End Try
             End If
