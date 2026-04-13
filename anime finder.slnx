@@ -1,3 +1,1 @@
-<Solution>
-  <Project Path="anime finder.vbproj" />
-</Solution>
+<Solution><Project Path="anime finder.vbproj" /><Project Path="anime finder wpf\anime finder wpf.vbproj" /><Properties><Property Name="ActiveCfg" Value="Debug|Any CPU" /><Property Name="StartupProject" Value="anime finder.vbproj" /></Properties></Solution>

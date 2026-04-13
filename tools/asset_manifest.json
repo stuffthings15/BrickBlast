@@ -1,0 +1,119 @@
+{
+  "version": "1.0",
+  "project": "BrickBlast WPF",
+  "description": "Asset manifest for free CC0 game art downloads",
+  "sources": [
+    {
+      "id": "opengameart-breakout",
+      "name": "Breakout (Brick Breaker) Tile Set - Free",
+      "category": "Gameplay",
+      "source_page": "https://opengameart.org/content/breakout-brick-breaker-tile-set-free",
+      "expected_license": "CC0",
+      "priority": 1,
+      "use_case": "Primary bricks, paddle, ball, power-up sprites",
+      "downloader_type": "opengameart-page-scrape",
+      "destination_folder": "ExternalAssets/unpacked/opengameart-breakout",
+      "status": "auto"
+    },
+    {
+      "id": "itch-breakout",
+      "name": "Free Breakout Brick Breaker Assets by Ethereal Regions",
+      "category": "Gameplay",
+      "source_page": "https://ethereal-regions.itch.io/free-breakout-brick-breaker-assets",
+      "expected_license": "CC0",
+      "priority": 2,
+      "use_case": "Supplemental bricks, paddle, ball, heart, star",
+      "downloader_type": "manual",
+      "destination_folder": "ExternalAssets/unpacked/itch-breakout",
+      "status": "manual",
+      "manual_reason": "itch.io requires interactive download button; may have name-your-price gate"
+    },
+    {
+      "id": "kenney-ui-pack",
+      "name": "Kenney UI Pack",
+      "category": "UI",
+      "source_page": "https://kenney.nl/assets/ui-pack",
+      "expected_license": "CC0",
+      "priority": 1,
+      "use_case": "Menu buttons, panels, sliders, HUD frames",
+      "downloader_type": "kenney-page-scrape",
+      "destination_folder": "ExternalAssets/unpacked/kenney-ui-pack",
+      "status": "auto"
+    },
+    {
+      "id": "kenney-pixel-ui-pack",
+      "name": "Kenney Pixel UI Pack",
+      "category": "UI",
+      "source_page": "https://kenney.nl/assets/pixel-ui-pack",
+      "expected_license": "CC0",
+      "priority": 2,
+      "use_case": "Pixel-art style UI alternative",
+      "downloader_type": "kenney-page-scrape",
+      "destination_folder": "ExternalAssets/unpacked/kenney-pixel-ui-pack",
+      "status": "auto"
+    },
+    {
+      "id": "kenney-game-icons",
+      "name": "Kenney Game Icons",
+      "category": "UI",
+      "source_page": "https://kenney.nl/assets/game-icons",
+      "expected_license": "CC0",
+      "priority": 1,
+      "use_case": "HUD icons: lives, settings, score, power-up indicators",
+      "downloader_type": "kenney-page-scrape",
+      "destination_folder": "ExternalAssets/unpacked/kenney-game-icons",
+      "status": "auto"
+    },
+    {
+      "id": "kenney-input-prompts",
+      "name": "Kenney Input Prompts",
+      "category": "UI",
+      "source_page": "https://kenney.nl/assets/input-prompts",
+      "expected_license": "CC0",
+      "priority": 3,
+      "use_case": "Keyboard/controller prompt icons for menus",
+      "downloader_type": "kenney-page-scrape",
+      "destination_folder": "ExternalAssets/unpacked/kenney-input-prompts",
+      "status": "auto"
+    },
+    {
+      "id": "kenney-brick-pack",
+      "name": "Kenney Brick Pack",
+      "category": "Background",
+      "source_page": "https://kenney.nl/assets/brick-pack",
+      "expected_license": "CC0",
+      "priority": 4,
+      "use_case": "Decorative menu backgrounds only — NOT gameplay bricks",
+      "downloader_type": "kenney-page-scrape",
+      "destination_folder": "ExternalAssets/unpacked/kenney-brick-pack",
+      "status": "auto"
+    },
+    {
+      "id": "kenney-platformer-bricks",
+      "name": "Kenney Platformer Bricks",
+      "category": "Background",
+      "source_page": "https://kenney.nl/assets/platformer-bricks",
+      "expected_license": "CC0",
+      "priority": 5,
+      "use_case": "Optional decorative panel textures",
+      "downloader_type": "kenney-page-scrape",
+      "destination_folder": "ExternalAssets/unpacked/kenney-platformer-bricks",
+      "status": "auto"
+    }
+  ],
+  "asset_key_mapping": {
+    "Sprites/brick_0": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["brick", "block", "tile_red", "element_red"] },
+    "Sprites/brick_1": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["brick", "block", "tile_orange", "element_orange"] },
+    "Sprites/brick_2": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["brick", "block", "tile_yellow", "element_yellow"] },
+    "Sprites/brick_3": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["brick", "block", "tile_green", "element_green"] },
+    "Sprites/brick_4": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["brick", "block", "tile_blue", "element_blue"] },
+    "Sprites/brick_5": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["brick", "block", "tile_purple", "element_purple"] },
+    "Sprites/brick_6": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["brick", "block", "tile_pink", "element_pink"] },
+    "Sprites/paddle": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["paddle", "bar", "platform"] },
+    "Sprites/ball": { "source_priority": ["opengameart-breakout", "itch-breakout"], "keywords": ["ball", "sphere", "orb"] },
+    "UI/heart": { "source_priority": ["itch-breakout", "kenney-game-icons", "opengameart-breakout"], "keywords": ["heart", "life", "lives"] },
+    "UI/star": { "source_priority": ["itch-breakout", "kenney-game-icons"], "keywords": ["star", "score"] },
+    "UI/button_blue": { "source_priority": ["kenney-ui-pack", "kenney-pixel-ui-pack"], "keywords": ["button", "blue", "btn"] },
+    "UI/panel": { "source_priority": ["kenney-ui-pack", "kenney-pixel-ui-pack"], "keywords": ["panel", "window", "frame"] }
+  }
+}

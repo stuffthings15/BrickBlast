@@ -18,7 +18,7 @@ This folder is fully self-contained. Zip it and share — no install required.
 | Key | Action |
 |-----|--------|
 | ← → / A D | Move paddle |
-| SPACE | Start / Resume |
+| SPACE | Start / Resume / Speed boost (2x) |
 | P / ESC | Pause |
 | F | Speed boost (2x) |
 | H / O | Options menu |

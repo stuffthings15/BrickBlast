@@ -1,0 +1,69 @@
+
+[2026-04-12 15:52:21] === BrickBlast Asset Fetch Started ===
+[2026-04-12 15:52:21] Download dir: C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\ExternalAssets\downloads
+[2026-04-12 15:52:21] Unpack dir:   C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\ExternalAssets\unpacked
+[2026-04-12 15:52:21] 
+[2026-04-12 15:52:21] --- Processing: Breakout (Brick Breaker) Tile Set - Free (priority 1) ---
+[2026-04-12 15:52:21] [FETCH] Scraping https://opengameart.org/content/breakout-brick-breaker-tile-set-free for file links...
+[2026-04-12 15:52:21] [DOWNLOAD] https://opengameart.org/sites/default/files/preview_598.png
+[2026-04-12 15:52:24] [DOWNLOAD] https://opengameart.org/sites/default/files/sample_57.png
+[2026-04-12 15:52:26] [DOWNLOAD] https://opengameart.org/sites/default/files/Breakout_Tile_Set_Free.zip
+[2026-04-12 15:52:28] [OK] opengameart-breakout: 3 file(s) downloaded
+[2026-04-12 15:52:28] [UNPACK-NESTED] Breakout_Tile_Set_Free.zip
+[2026-04-12 15:52:29] 
+[2026-04-12 15:52:29] --- Processing: Free Breakout Brick Breaker Assets by Ethereal Regions (priority 2) ---
+[2026-04-12 15:52:29] [MANUAL] itch-breakout: Source requires interactive download (itch.io name-your-price gate)
+[2026-04-12 15:52:29] 
+[2026-04-12 15:52:29] --- Processing: Kenney UI Pack (priority 1) ---
+[2026-04-12 15:52:29] [FETCH] Scraping https://kenney.nl/assets/ui-pack for download link...
+[2026-04-12 15:52:30] [MANUAL] kenney-ui-pack: Could not find ZIP download link on page
+[2026-04-12 15:52:30] 
+[2026-04-12 15:52:30] --- Processing: Kenney Pixel UI Pack (priority 2) ---
+[2026-04-12 15:52:30] [FETCH] Scraping https://kenney.nl/assets/pixel-ui-pack for download link...
+[2026-04-12 15:52:31] [MANUAL] kenney-pixel-ui-pack: Could not find ZIP download link on page
+[2026-04-12 15:52:31] 
+[2026-04-12 15:52:31] --- Processing: Kenney Game Icons (priority 1) ---
+[2026-04-12 15:52:31] [FETCH] Scraping https://kenney.nl/assets/game-icons for download link...
+[2026-04-12 15:52:31] [MANUAL] kenney-game-icons: Could not find ZIP download link on page
+[2026-04-12 15:52:31] 
+[2026-04-12 15:52:31] --- Processing: Kenney Input Prompts (priority 3) ---
+[2026-04-12 15:52:31] [FETCH] Scraping https://kenney.nl/assets/input-prompts for download link...
+[2026-04-12 15:52:32] [MANUAL] kenney-input-prompts: Could not find ZIP download link on page
+[2026-04-12 15:52:32] 
+[2026-04-12 15:52:32] --- Processing: Kenney Brick Pack (priority 4) ---
+[2026-04-12 15:52:32] [FETCH] Scraping https://kenney.nl/assets/brick-pack for download link...
+[2026-04-12 15:52:33] [MANUAL] kenney-brick-pack: Could not find ZIP download link on page
+[2026-04-12 15:52:33] 
+[2026-04-12 15:52:33] --- Processing: Kenney Platformer Bricks (priority 5) ---
+[2026-04-12 15:52:33] [FETCH] Scraping https://kenney.nl/assets/platformer-bricks for download link...
+[2026-04-12 15:52:33] [MANUAL] kenney-platformer-bricks: Could not find ZIP download link on page
+[2026-04-12 15:52:33] 
+[2026-04-12 15:52:33] === Fetch Complete ===
+[2026-04-12 15:52:34] Check C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\ExternalAssets\manual_downloads_needed.txt for assets requiring manual download.
+[15:57:15] === Kenney CC0 Pack Downloader ===
+[15:57:16] [FETCH] https://kenney.nl/assets/ui-pack
+[15:57:16] [DOWNLOAD] https://kenney.nl/media/pages/assets/ui-pack/af874291da-1718203990/kenney_ui-pack.zip
+[15:57:19] [OK] kenney-ui-pack — 1.17 MB
+[15:57:28] [UNPACKED] kenney-ui-pack — 1315 files
+[15:57:29] [FETCH] https://kenney.nl/assets/pixel-ui-pack
+[15:57:30] [DOWNLOAD] https://kenney.nl/media/pages/assets/pixel-ui-pack/38633c7bb8-1677661508/kenney_pixel-ui-pack.zip
+[15:57:32] [OK] kenney-pixel-ui-pack — 0.14 MB
+[15:57:32] [UNPACKED] kenney-pixel-ui-pack — 40 files
+[15:57:33] [FETCH] https://kenney.nl/assets/game-icons
+[15:57:34] [DOWNLOAD] https://kenney.nl/media/pages/assets/game-icons/94af1f5c0b-1677661579/kenney_game-icons.zip
+[15:57:36] [OK] kenney-game-icons — 1 MB
+[15:57:39] [UNPACKED] kenney-game-icons — 434 files
+[15:57:40] [FETCH] https://kenney.nl/assets/input-prompts
+[15:57:41] [DOWNLOAD] https://kenney.nl/media/pages/assets/input-prompts/67c675026d-1763810066/kenney_input-prompts_1.4.1.zip
+[15:57:44] [OK] kenney-input-prompts — 4.28 MB
+[15:57:58] [UNPACKED] kenney-input-prompts — 4099 files
+[15:57:59] [FETCH] https://kenney.nl/assets/brick-pack
+[15:58:00] [DOWNLOAD] https://kenney.nl/media/pages/assets/brick-pack/1015000938-1721806579/kenney_toy-brick-pack.zip
+[15:58:02] [OK] kenney-brick-pack — 0.43 MB
+[15:58:03] [UNPACKED] kenney-brick-pack — 554 files
+[15:58:04] [FETCH] https://kenney.nl/assets/platformer-bricks
+[15:58:05] [DOWNLOAD] https://kenney.nl/media/pages/assets/platformer-bricks/0faa1dadd6-1677668020/kenney_platformer-bricks.zip
+[15:58:07] [OK] kenney-platformer-bricks — 0.23 MB
+[15:58:08] [UNPACKED] kenney-platformer-bricks — 160 files
+[15:58:09] 
+[15:58:09] === Done: 6 downloaded, 0 cached, 0 failed ===

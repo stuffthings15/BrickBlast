@@ -276,3 +276,86 @@ Organized into `#Region` blocks:
 ---
 
 *Document generated for CS-120 Final Project — Team Fast Talk*
+
+---
+
+## 7. External Asset Integration (v1.1+)
+
+### Asset Packs Used
+| Pack | Source | License | Assets |
+|------|--------|---------|--------|
+| Breakout Tile Set Free | OpenGameArt (Jamie Cross) | CC-BY 4.0 | 60 tiles: bricks, paddles, balls, power-ups |
+| OGA Breakout Full Kit | OpenGameArt | CC0 | 50 sprites: HD paddles, colored balls, alt bricks, text overlays, backgrounds |
+| OGA Retro Breakout | OpenGameArt | CC0 | Retro spritesheet, retro background |
+| Kenney Game Icons | kenney.nl | CC0 | 30 icons: gear, pause, home, trophy, warning, target, wrench, etc. |
+| Kenney UI Pack | kenney.nl | CC0 | Buttons (4 colors), sliders, checkboxes, panels, arrows |
+| Kenney Input Prompts | kenney.nl | CC0 | Keyboard keys: space, arrows, escape, F, P, H, O |
+| Kenney Pixel UI Pack | kenney.nl | CC0 | Pixel-art buttons (7 colors × 3 states = 21 sprites) |
+| Kenney Brick Pack | kenney.nl | CC0 | Decorative tile textures (decor_brick_0..3) |
+| Kenney Platformer Bricks | kenney.nl | CC0 | Platform tile sprites (platform_0..5) |
+
+**Total on disk:** 179 PNG sprites  
+**Total referenced in code:** 179/179 (100% utilization)
+
+### How Assets Override Procedural Rendering
+`AssetManager.vb` checks the `Assets/` folder at startup via `AssetImporter.vb`.
+When a disk file exists for a given key, it is loaded as a `BitmapSource` and returned
+from `GetSprite(key)`. When no file exists, `ProceduralAssets.vb` generates a
+`BitmapSource` programmatically and caches it. This means:
+
+- The game runs identically with or without the external assets folder.
+- External sprites enhance visual quality without breaking core logic.
+- Zero downtime: missing assets fall back silently to procedural versions.
+
+### Asset Usage by Screen
+| Screen | Assets Used |
+|--------|------------|
+| Menu | text_menu, button_green, button_yellow, button_start, button_round, player_icon, multiplayer_icon, gear, key_o, key_arrow_*, key_escape, key_space_icon, info, movie, locked, home, pixel_space/inlay, retro_spritesheet, unlocked |
+| HUD | player_icon, pause, power_icon, target, plus, minus, heart, bonus_extra_life |
+| Bricks | brick_0..6 (+ damaged), brick_grey (2-hit), brick_dark (3-hit), brick_gold (4+ hit), brick2_* (8 alt colors), brick2_metal |
+| Paddle | paddle_hd_*, paddle_*_large, paddle_*_med, paddle_*_small, paddle_alt |
+| Balls | ball_fire (combo≥5), ball_alt (even levels), ball_blue/red/purple (power-ups) |
+| Combo | bonus_bullet (×10), star (×5), gem (×2+) |
+| Get Ready | warning (flanking countdown) |
+| Options | panel_button_rectangle_depth_line, wrench, button_blue_flat/gloss, information, pixel_blue/green/red/yellow/brown/tan/grey (+ pressed), pixel_tan_inlay, pixel_brown_inlay, checkbox, checkbox_checked, icon_check, icon_x, stop, ui_arrow_*, key_arrow_*, nav_left/right, slider_track, slider_handle, return, key_escape, key_o, pixel_white, pixel_white_pressed |
+| Overlay | panel_button_rectangle_line, pause |
+| High Score | panel_button_round_line, panel_button_round_depth_line, panel_button_square_depth_line, pixel_UIpackSheet_transparent, pixel_UIpackSheet_magenta, button_red, leaderboard, player_icon, save, home, button_green_gloss, pixel_list, pixel_Preview, pixel_grey_inlay, pixel_white_inlay, medal_gold, medal_silver |
+| TileMap | platform_0..5, decor_brick_0..1 |
+| Background | game_background, menu_background, retro_background (every 3rd level) |
+
+---
+
+## 8. Platform Versions
+
+| Platform | Technology | Status | Location |
+|----------|-----------|--------|----------|
+| Windows WPF | VB.NET, .NET 10, WPF DrawingContext | ✅ Complete | `anime finder wpf/` |
+| Windows WinForms | VB.NET, .NET 10, GDI+ | ✅ Complete | `Form1.vb` |
+| HTML5 / Web | JavaScript Canvas API | ✅ Complete | `web/index.html` |
+| iPad | Capacitor/Cordova + JS | ✅ Complete | `versions/ipad/` |
+| iPhone | Capacitor/Cordova + JS | ✅ Complete | `versions/iphone/` |
+| Android Tablet | Capacitor/Cordova + JS | ✅ Complete | `versions/android-tablet/` |
+| Android Phone | Capacitor/Cordova + JS | ✅ Complete | `versions/android-phone/` |
+| macOS Desktop | VB.NET, .NET 10, Avalonia UI | 🚧 Foundation | `anime finder macos/` |
+
+### macOS Port Notes
+- Uses **Avalonia UI 11** — a WPF-compatible cross-platform UI framework
+- `DrawingContext` API is nearly identical to WPF (same methods, same coordinates)
+- Main differences: `PushOpacity`/`PushTransform` return `IDisposable` (use `Using` blocks), `LinearGradientBrush` uses different constructor, sound uses macOS `afplay` instead of `winmm.dll`
+- Build: `dotnet publish -r osx-arm64 -c Release --self-contained true`
+- See `versions/macos/README.md` for full porting guide
+
+### Keyboard Shortcuts (all platforms)
+| Key | Action |
+|-----|--------|
+| ← → / A D | Move paddle |
+| SPACE | Start / Resume |
+| P / ESC | Pause |
+| F | 2× speed boost |
+| H / O | Options |
+| **Alt+Enter** | **Toggle fullscreen** (WPF + macOS) |
+
+---
+
+*Last updated: v1.1 — External asset integration, macOS port, Alt+Enter fullscreen*  
+*Team Fast Talk | CS-120 | GitHub: https://github.com/stuffthings15/BrickBlast*

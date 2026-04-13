@@ -1,0 +1,42 @@
+
+=== Asset Integration Report ===
+Date: 2026-04-12 18:25
+
+--- OpenGameArt Breakout (verify) ---
+
+--- Kenney Game Icons ---
+  [OK] UI/star_icon <- star.png
+  [OK] UI/checkmark <- checkmark.png
+  [OK] UI/cross <- cross.png
+  [OK] UI/arrow_up <- arrowUp.png
+  [OK] UI/arrow_down <- arrowDown.png
+  [OK] UI/arrow_left <- arrowLeft.png
+  [OK] UI/arrow_right <- arrowRight.png
+
+--- Kenney UI Pack (Blue) ---
+
+--- Kenney Input Prompts (Keyboard) ---
+
+--- Kenney Brick Pack (Backgrounds) ---
+
+--- Kenney Pixel UI Pack ---
+
+--- Kenney Platformer Bricks ---
+
+--- Mirror Assets to All Builds ---
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\windows-wpf\Assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\anime finder macos\Assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\windows\Assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\html\assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\android-phone\assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\android-tablet\assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\ipad\assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\iphone\assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\versions\macos\assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\web\assets <= 186 PNGs
+  [SYNC] C:\Users\stuff\Desktop\Classes\CS-120\PROJECTS\CS-120\Weeks\Week 12\anime finder\mobile\www\assets <= 186 PNGs
+
+=== Integration Complete ===
+Copied: 7 new files
+Skipped: 181 existing files
+Total PNG assets in project: 186

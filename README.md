@@ -29,7 +29,7 @@ No install required for Windows — the EXE is fully self-contained.
 | Key | Action |
 |-----|--------|
 | ← → / A D | Move paddle |
-| SPACE | Start / Resume / Next level |
+| SPACE | Start / Resume / Speed boost (2x) |
 | P / ESC | Pause |
 | F | Toggle 2x speed boost |
 | H / O | Options menu |
@@ -46,7 +46,8 @@ No install required for Windows — the EXE is fully self-contained.
 - **8 Level Patterns** — standard grid, checkerboard, diamond, fortress, stripes, cross, border, random
 - **Colorblind Mode** — CBF-safe palette with Unicode symbols on bricks
 - **Persistent High Scores** — saved to `%AppData%\BrickBlast\highscores.json`
-- **Zero External Assets** — all visuals, music, and SFX generated procedurally at runtime
+- **Zero External Assets (WinForms/HTML)** — all visuals, music, and SFX generated procedurally at runtime
+- **160 Imported Assets (WPF)** — CC0 sprites from OpenGameArt + Kenney for bricks, paddle, balls, UI, backgrounds
 
 ---
 
@@ -59,6 +60,8 @@ BrickBlast/
 ├── anime finder.vbproj             ← WinForms project
 ├── anime finder wpf/               ← WPF port
 │   ├── GameCanvas.vb               ← WPF game (DrawingContext rendering)
+│   ├── Assets/                     ← 160 CC0 sprites (OpenGameArt, Kenney)
+│   ├── Scripts/                    ← AssetManager, TileMap, EnemyAI, etc.
 │   ├── MainWindow.xaml             ← WPF window
 │   ├── MainWindow.xaml.vb          ← WPF code-behind
 │   ├── Program.vb                  ← WPF entry point

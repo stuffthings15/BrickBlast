@@ -1,6 +1,36 @@
 # BRICK BLAST — Release Notes
 
-## v1.1.0 — WPF Port + Multi-Platform Release (Current)
+## v1.2.0 — Asset Integration + Uniform Platform Sync (Current)
+
+### New
+- **SPACE bar speed boost** — pressing SPACE during gameplay now toggles 2× speed (same as F key). Applied to ALL versions: WinForms, WPF, HTML5, iPhone, iPad, Android Phone, Android Tablet
+- **160 CC0 sprites integrated (WPF)** — downloaded from OpenGameArt + Kenney + itch.io
+  - 7 brick colors + 7 damaged variants + 3 special bricks
+  - 4 colored balls (blue, green, purple, red) — color changes with game state
+  - 3 paddle sizes (normal, wide, short) — changes with power-ups
+  - Game background, retro background, menu background
+  - Heart icons in HUD (replace text ♥), trophy/star icons in high scores
+  - Keyboard prompt sprites on menu and options screens
+  - Text overlay sprites: GAME OVER, GET READY, YOU WIN, RESUME, OPTIONS
+  - 7 power-up icons on options screen
+- **Automated asset download pipeline** — `tools/fetch_new_sources.ps1`, `tools/fetch_kenney_packs.ps1`
+- **itch.io free download automation** — CSRF → CDN chain for min_price=0 assets
+
+### Updated
+- All 7 platform builds recompiled with latest code
+- All version READMEs updated with SPACE speed boost control
+- Root README updated with asset pipeline info
+- Solution file (`anime finder.slnx`) now includes WPF project as startup
+- All HTML versions synced from `web/index.html` (including xcode public/)
+
+### Fixed
+- WPF project was missing from solution file — VS was running WinForms instead
+- Asset copy to build output — clean rebuild ensures all 160 PNGs deploy
+- Kenney download scraper — fixed regex for new page structure
+
+---
+
+## v1.1.0 — WPF Port + Multi-Platform Release
 
 ### New
 - **WPF version** — full port of the game to Windows Presentation Foundation

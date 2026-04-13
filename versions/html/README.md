@@ -19,7 +19,7 @@ This folder is fully self-contained. Zip it and share — works on any device wi
 | Input | Action |
 |-------|--------|
 | ← → / A D / WASD | Move paddle |
-| SPACE / Click / Tap | Start / Resume |
+| SPACE / Click / Tap | Start / Resume / Speed boost (2x) |
 | P / ESC | Pause |
 | F | Speed boost (2x) |
 | H / O | Options menu |

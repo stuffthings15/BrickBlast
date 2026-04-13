@@ -32,7 +32,7 @@ Partial Class Form1
         Me.MaximizeBox = True
         Me.MinimumSize = New System.Drawing.Size(640, 480)
         Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
-        Me.Text = "Curtis Loop Brick Blast"
+        Me.Text = "Anime Finder"
         Me.BackColor = System.Drawing.Color.FromArgb(15, 15, 30)
 
     End Sub
