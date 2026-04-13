@@ -1148,6 +1148,12 @@ Public Class Form1
 
     Private Sub StartMusic()
         Try
+            ' Cancel any pending music timer to prevent two tracks playing
+            If _musicChangeTimer IsNot Nothing Then
+                _musicChangeTimer.Stop()
+                _musicChangeTimer.Dispose()
+                _musicChangeTimer = Nothing
+            End If
             If _musicFiles Is Nothing Then Return
             _musicTempFile = _musicFiles(_musicStyle)
             If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
@@ -1166,6 +1172,11 @@ Public Class Form1
 
     Private Sub StartMusicDirect()
         Try
+            If _musicChangeTimer IsNot Nothing Then
+                _musicChangeTimer.Stop()
+                _musicChangeTimer.Dispose()
+                _musicChangeTimer = Nothing
+            End If
             If _musicFiles Is Nothing Then Return
             _musicTempFile = _musicFiles(_musicStyle)
             If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
@@ -1215,6 +1226,11 @@ Public Class Form1
 
     Private Sub StartHighScoreMusic()
         Try
+            If _musicChangeTimer IsNot Nothing Then
+                _musicChangeTimer.Stop()
+                _musicChangeTimer.Dispose()
+                _musicChangeTimer = Nothing
+            End If
             Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v3")
             If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
             _highScoreMusicFile = Path.Combine(tmpDir, "highscore.mid")
@@ -1689,17 +1705,10 @@ Public Class Form1
 
 #Region "Drawing"
     Private Sub DrawStarField(g As Graphics)
-        Dim bgKey = If(_state = GameState.Menu OrElse _state = GameState.HighScore,
-                       "tiles/menu_background", "tiles/game_background")
-        Dim bgSpr = TryGetSprite(bgKey)
-        If bgSpr IsNot Nothing Then
-            g.DrawImage(bgSpr, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-        Else
-            ' Guaranteed dark fill when no background sprite — ensures all text contrasts
-            Using br As New SolidBrush(Color.FromArgb(255, 10, 10, 25))
-                g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
-            End Using
-        End If
+        ' Solid dark background — black, not the yellow sprite textures
+        Using br As New SolidBrush(Color.FromArgb(255, 8, 8, 20))
+            g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+        End Using
         For i = 0 To _starFieldX.Length - 1
             Dim bright = _starFieldBright(i)
             Dim twinkle = CInt(Math.Sin(_frameCount * 0.05 + i) * 40)
