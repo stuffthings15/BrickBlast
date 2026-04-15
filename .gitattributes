@@ -1,0 +1,2 @@
+versions/windows/BrickBlast.exe filter=lfs diff=lfs merge=lfs -text
+versions/windows-wpf/BrickBlast.exe filter=lfs diff=lfs merge=lfs -text
