@@ -385,7 +385,7 @@ Public Class Form1
         _appMutex = New System.Threading.Mutex(True, MutexName, createdNew)
         If Not createdNew Then
             MessageBox.Show(
-                "Anime Finder is already running." & vbNewLine &
+                "Anime Finder is already running." & vbCrLf &
                 "Close the other window first, then press F5.",
                 "Already Running",
                 MessageBoxButtons.OK,
@@ -706,7 +706,7 @@ Public Class Form1
             Const HDR_H_W As Integer = 72, HDR_TAB_GAP_W As Integer = 8
             Const TAB_GRID_GAP_W As Integer = 20, FTR_H_W As Integer = 50
             Const FTR_PAD_W As Integer = 20, SB_W_W As Integer = 14
-            Const SB_GAP_W As Integer = 12, COL_GAP_W As Integer = 16
+            Const SB_GAP_W As Integer = 12
             Const ROW_GAP_W As Integer = 14, CARD_H_W As Integer = 132
             Const PAD_V_W As Integer = 28
             Dim PH_W = CInt(LOGICAL_HEIGHT * 0.86)
@@ -812,7 +812,7 @@ Public Class Form1
             Const FTR_H_HT As Integer = 50, FTR_PAD_HT As Integer = 20
             Const SB_W_HT As Integer = 14, SB_GAP_HT As Integer = 12
             Const COL_GAP_HT As Integer = 16, ROW_GAP_HT As Integer = 14
-            Const CARD_H_HT As Integer = 132, BTN_W_HT As Integer = 152, BTN_H_HT As Integer = 42
+            Const CARD_H_HT As Integer = 132
 
             Dim PW_HT = CInt(LOGICAL_WIDTH * 0.88)
             Dim PH_HT = CInt(LOGICAL_HEIGHT * 0.86)
