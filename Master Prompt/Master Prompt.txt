@@ -1,0 +1,2286 @@
+# Vibe Coder Master Prompt Document: 2D Brick Blast Final Project Build
+
+Source requirement basis: the uploaded **Game Development Covenant** requires a Mobile Games mastery-tier project using the approved BrickBlast starter, Visual Basic / .NET technical declaration, a three-week delivery window, object-oriented structures, selected upgrades for networking, publishing, marketplace, and video trailer, plus complete documentation, testing, communication logs, submission evidence, and team ownership records. 
+
+---
+
+## 0. Role and Operating Mode
+
+You are acting as an expert game development implementation agent, documentation assistant, production engineer, and submission-readiness partner.
+
+Build a polished 2D brick blast style game based on the locked BrickBlast starter project. Treat this as a final project deliverable, not a prototype. The final output must be stable, playable, documented, testable, presentable, and publication-ready.
+
+The goal is to transform the starter BrickBlast project into a complete mobile-focused 2D arcade game with a clean gameplay loop, progression systems, marketplace economy, polish, technical evidence, and a professional final submission package.
+
+The project must satisfy the following declared constraints:
+
+Project type: Mobile Games
+Starter source: BrickBlast
+Starter URL: `https://github.com/stuffthings15/BrickBlast`
+Technical language: Visual Basic
+Framework / engine: .NET
+Object-oriented structures: Required
+Complex data structures: Optional but preferred
+Persistence layer: Optional but strongly recommended
+Canonical folder structure: `Assets / Scripts / Scenes / Prefabs / Docs`
+Delivery window: 3 weeks
+Selected tier upgrades: Networking, Publish to Store, Marketplace System, Video Trailer
+Target release surfaces: Google Play Store, Apple App Store, itch.io, gd.games, or equivalent public / instructor-approved platform
+Final submission standard: polished, publicly presentable, documented, evidenced, and demo-ready
+
+Do not treat any requirement as optional unless explicitly marked optional. Every requirement must be implemented, documented, or evidenced.
+
+---
+
+# 1. Project Identity and Declaration
+
+## 1.1 Project Name
+
+Use the project name:
+
+**BrickBlast: Velocity Market**
+
+A subtitle may be used in marketing materials:
+
+**A fast 2D brick breaker arcade game with progression, customization, lightweight online sync, and a points-based marketplace.**
+
+## 1.2 Project Vision
+
+Create a 2D brick blast / brick breaker game designed for short mobile play sessions. The player launches a ball or projectile sequence to destroy blocks, survive increasingly difficult levels, earn points, and spend those points in an in-game marketplace on visual and gameplay-adjacent upgrades.
+
+The game should target the solo mobile player who wants an easy-to-understand arcade experience that can be played while waiting in line, sitting at the DMV, doing laundry, commuting, or passing a few idle minutes. The design must prioritize quick startup, responsive input, fast screen transitions, satisfying feedback, and low-friction replay.
+
+The game must feel complete rather than like a tutorial clone. It must include menus, level flow, clear success and fail states, scoring, progression, upgrade purchasing, local persistence, visual feedback, audio feedback, game balance, and a final demo path.
+
+## 1.3 Required Player Experience
+
+The player should be able to:
+
+Open the game and reach the main menu quickly.
+
+Start a new session within one or two taps.
+
+Control the paddle, aim, launcher, or ball system with responsive input.
+
+Break bricks using predictable physics or deterministic projectile movement.
+
+Earn points by clearing bricks, completing levels, achieving combos, or surviving streaks.
+
+Lose when the ball or projectile objective fails according to the game rules.
+
+Win a level when all required bricks are destroyed.
+
+Advance through multiple levels with increasing complexity.
+
+Spend earned points in a marketplace.
+
+Equip or apply purchased cosmetics or gameplay modifiers.
+
+See clear UI feedback for score, lives, level, currency, equipped item, and pause state.
+
+Return later and retain progress using a persistence layer.
+
+Play without network access, while optionally syncing when online.
+
+View credits, instructions, and version information.
+
+## 1.4 Final Build Philosophy
+
+This project must ship as a polished final worthy of public presentation or publishing. It must not look like a raw classroom prototype. Every visible screen must feel intentional. Every major system must either be functional or clearly marked as intentionally scoped.
+
+The final build must include:
+
+A complete gameplay loop.
+
+Original mechanics or progression layers beyond the starter scaffold.
+
+Object-oriented structure in the codebase.
+
+A marketplace / in-app transaction style system using earnable in-game currency.
+
+A low-latency server sync or networking component.
+
+A publication-ready build surface.
+
+A short video trailer.
+
+Professional documentation.
+
+Architecture diagrams.
+
+Testing log.
+
+Submission checklist evidence.
+
+---
+
+# 2. Technical Declaration
+
+## 2.1 Required Technical Stack
+
+Implement the project using:
+
+Language: Visual Basic
+Runtime / framework: .NET
+Paradigm: Object-oriented programming
+Project domain: Mobile game / 2D arcade game
+Starter project: BrickBlast
+Core target: Mobile-first layout and interaction
+
+## 2.2 Required Folder Structure
+
+Organize the repository using the following canonical folder structure:
+
+```text
+Assets/
+  Art/
+  Audio/
+  Fonts/
+  UI/
+  Effects/
+
+Scripts/
+  Core/
+  Gameplay/
+  Input/
+  UI/
+  Economy/
+  Marketplace/
+  Persistence/
+  Networking/
+  Audio/
+  Testing/
+
+Scenes/
+  MainMenu/
+  Gameplay/
+  Marketplace/
+  Results/
+  Settings/
+  Credits/
+
+Prefabs/
+  Bricks/
+  Balls/
+  Powerups/
+  UI/
+  Effects/
+
+Docs/
+  Architecture/
+  Testing/
+  Planning/
+  Screenshots/
+  Submission/
+  Trailer/
+```
+
+If the starter project uses a different structure, adapt it while preserving these categories. Do not leave the project as a flat pile of files.
+
+## 2.3 Required Object-Oriented Structures
+
+Implement clear classes or modules for the main systems. At minimum, create or refactor toward the following object-oriented architecture:
+
+```text
+GameManager
+LevelManager
+BallController
+PaddleController
+Brick
+BrickManager
+ScoreManager
+CurrencyManager
+MarketplaceManager
+InventoryManager
+UpgradeDefinition
+PlayerProfile
+SaveSystem
+NetworkSyncService
+AudioManager
+UIManager
+GameState
+LevelDefinition
+PowerUp
+InputManager
+AnalyticsLogger
+```
+
+Each class must have a clear responsibility. Avoid placing all logic inside one monolithic file.
+
+## 2.4 Required Game States
+
+Implement a formal game state model. The game must support at least:
+
+Boot
+MainMenu
+LevelSelect or NewRun
+Playing
+Paused
+LevelComplete
+GameOver
+Marketplace
+Settings
+Credits
+
+Represent these as an enum, constants, or equivalent structured model.
+
+Example conceptual model:
+
+```text
+GameState.Boot
+GameState.MainMenu
+GameState.Playing
+GameState.Paused
+GameState.LevelComplete
+GameState.GameOver
+GameState.Marketplace
+GameState.Settings
+GameState.Credits
+```
+
+The UI and gameplay logic must respond consistently to state changes.
+
+## 2.5 Required Data Models
+
+Create structured data models for:
+
+Player profile
+Currency balance
+Purchased marketplace items
+Equipped marketplace items
+Current level
+Best scores
+Level completion status
+Settings
+Network sync metadata
+Testing / debug information if useful
+
+Suggested data objects:
+
+```text
+PlayerProfile
+  PlayerId
+  DisplayName
+  TotalCurrency
+  CurrentLevel
+  BestLevelReached
+  LifetimeBricksDestroyed
+  LifetimeScore
+  PurchasedItemIds
+  EquippedBallSkinId
+  EquippedPaddleSkinId
+  EquippedThemeId
+  LastSyncTimestamp
+
+MarketplaceItem
+  ItemId
+  DisplayName
+  Description
+  Category
+  Cost
+  IsPurchased
+  IsEquipped
+  PreviewAssetPath
+
+LevelDefinition
+  LevelId
+  LevelName
+  BrickLayout
+  DifficultyRating
+  StartingLives
+  ScoreTarget
+  RewardCurrency
+```
+
+## 2.6 Persistence Requirement
+
+Even though persistence is marked optional in the covenant, implement it because the marketplace and progression systems need it.
+
+Persist:
+
+Currency balance
+Unlocked levels
+Purchased items
+Equipped cosmetics
+Best scores
+Settings
+Last completed level
+Network sync status
+
+Use local storage appropriate to the project stack. This may be JSON, local file storage, app settings, serialized profile data, SQLite, or another .NET-compatible persistence method.
+
+Do not store progress only in runtime memory.
+
+---
+
+# 3. Game Design Specification
+
+## 3.1 Core Genre
+
+This is a 2D brick blast / brick breaker game.
+
+The core loop:
+
+Aim or position
+Launch or deflect ball
+Destroy bricks
+Earn points
+Survive
+Complete level
+Earn currency
+Upgrade or customize
+Repeat at higher difficulty
+
+## 3.2 Core Gameplay Loop
+
+Implement this loop:
+
+The player starts on the main menu.
+
+The player taps Play.
+
+The game loads the current available level.
+
+The ball starts docked, paused, or ready to launch.
+
+The player launches the ball.
+
+The ball collides with bricks, paddle, walls, and possibly powerups.
+
+Each brick hit reduces durability or destroys the brick.
+
+Destroyed bricks grant score and sometimes currency.
+
+The level ends in success when all required bricks are destroyed.
+
+The level ends in failure when the player loses all lives, misses all balls, or fails the objective.
+
+On success, show a results screen with score, currency earned, bonuses, and next-level button.
+
+On failure, show retry, marketplace, and main menu options.
+
+Between levels, allow the player to enter the marketplace and spend points.
+
+Progress is saved.
+
+## 3.3 Input Requirements
+
+The game must be mobile-first but playable on desktop for testing.
+
+Support:
+
+Touch drag for paddle movement.
+
+Mouse drag for desktop testing.
+
+Optional keyboard support for debugging.
+
+Tap to launch ball.
+
+Tap pause button.
+
+Tap marketplace buttons.
+
+Tap settings toggles.
+
+Input should feel responsive. Avoid delayed controls.
+
+## 3.4 Camera and Screen Layout
+
+Use a portrait-oriented mobile-friendly layout unless the starter project strongly favors landscape. The user prefers landscape video output, but gameplay may remain mobile-first. If gameplay is portrait, the video trailer should still be exported in landscape format with appropriate framing, side panels, or captured widescreen presentation.
+
+Gameplay screen must show:
+
+Score
+Currency earned this run
+Lives or balls remaining
+Current level
+Pause button
+Active powerup indicator if applicable
+Clear playfield boundaries
+Readable bricks
+Readable paddle and ball
+
+## 3.5 Brick System
+
+Bricks must be more than static rectangles. Implement multiple brick types.
+
+Required brick types:
+
+Standard Brick
+Durable Brick
+Reward Brick
+Hazard Brick
+Shielded Brick or Moving Brick
+
+Suggested behavior:
+
+Standard Brick: breaks in one hit.
+
+Durable Brick: requires multiple hits and changes visual state.
+
+Reward Brick: grants bonus currency or powerup chance.
+
+Hazard Brick: punishes careless play, maybe speeds ball, damages paddle, or spawns obstacle.
+
+Shielded Brick: requires hitting nearby key brick first, or takes reduced damage until exposed.
+
+Moving Brick: moves horizontally or vertically within a lane.
+
+Each brick should expose properties such as:
+
+Health
+ScoreValue
+CurrencyReward
+BrickType
+IsRequiredForCompletion
+HitEffect
+DestroyEffect
+
+## 3.6 Ball System
+
+The ball should include:
+
+Velocity
+Direction
+Collision response
+Speed clamp
+Launch behavior
+Reset behavior
+Trail effect
+Audio feedback
+Optional skin support from marketplace
+
+Prevent infinite horizontal or vertical movement bugs by enforcing minimum angle corrections.
+
+The ball must never become permanently stuck. Add anti-stall logic.
+
+Anti-stall examples:
+
+If the ball bounces between the same two surfaces too many times, slightly perturb the angle.
+
+If velocity magnitude falls below a threshold, restore minimum speed.
+
+If the ball leaves bounds, reset or subtract life.
+
+If the ball becomes trapped inside geometry, teleport it to a safe reset position.
+
+## 3.7 Paddle System
+
+The paddle should include:
+
+Touch / mouse controlled horizontal movement.
+
+Bounds clamping.
+
+Collision response.
+
+Optional size modifiers.
+
+Optional marketplace cosmetic skins.
+
+Optional powerup effects.
+
+The paddle must feel immediate and predictable.
+
+## 3.8 Level System
+
+Build at least 8 playable levels.
+
+Levels should increase in difficulty by changing:
+
+Brick count
+Brick durability
+Brick layout complexity
+Hazard presence
+Ball speed
+Moving brick count
+Reward opportunities
+Required precision
+
+Level examples:
+
+Level 1: Basic tutorial layout
+Level 2: Wide brick wall
+Level 3: Durable brick introduction
+Level 4: Reward brick introduction
+Level 5: Hazard brick introduction
+Level 6: Shielded or moving brick introduction
+Level 7: Mixed challenge
+Level 8: Final showcase level
+
+Each level must be completable through normal play.
+
+## 3.9 Level Completion Rules
+
+A level is complete when all required bricks are destroyed.
+
+Not every brick must be required. Bonus bricks may remain optional if intentionally designed.
+
+On completion:
+
+Freeze gameplay.
+
+Play success animation.
+
+Show results screen.
+
+Grant score and currency.
+
+Unlock next level.
+
+Save progress.
+
+Offer next level, replay, marketplace, main menu.
+
+## 3.10 Failure Rules
+
+The player fails when:
+
+Lives reach zero, or
+
+All balls are lost, or
+
+An objective-specific fail condition is met.
+
+On failure:
+
+Freeze gameplay.
+
+Play failure sound / animation.
+
+Show score.
+
+Show currency earned if partial rewards are allowed.
+
+Offer retry.
+
+Offer marketplace.
+
+Offer main menu.
+
+Save any valid currency if design allows it.
+
+---
+
+# 4. Required Feature Systems
+
+## 4.1 Complete Gameplay Loop
+
+The final game must include:
+
+Main menu
+Gameplay
+Pause menu
+Success state
+Failure state
+Results screen
+Marketplace
+Settings
+Credits
+Progress saving
+Replay flow
+
+Do not submit only the gameplay scene.
+
+## 4.2 Original Mechanics Beyond Starter Scaffold
+
+Add at least three original mechanics or progression layers beyond the starter BrickBlast scaffold.
+
+Required additions:
+
+Marketplace economy
+Multiple brick types
+Level progression
+Persistent unlocks
+Cosmetic customization
+Networking sync
+Trailer / public presentation package
+
+Optional additions:
+
+Daily challenge
+Combo meter
+Powerups
+Boss brick
+Achievement badges
+Level rating stars
+Player name
+Cloud save sync
+Leaderboard mock or real backend
+Haptic feedback
+Screen shake
+Particle effects
+Theme switching
+
+## 4.3 Marketplace System
+
+Implement an in-game marketplace where points earned through gameplay can be spent on upgrades or cosmetics.
+
+Important: This does not need to use real money. Treat it as an in-app transaction system using in-game currency.
+
+The marketplace must include:
+
+Currency display
+Item list
+Item cost
+Purchase button
+Insufficient funds feedback
+Purchased state
+Equipped state
+Persistence
+At least 8 purchasable items
+
+Recommended categories:
+
+Ball skins
+Paddle skins
+Background themes
+Trail effects
+Impact effects
+Music packs
+Powerup modifiers
+Premium challenge level unlocks
+
+Example marketplace inventory:
+
+1. Neon Ball Skin — 100 points
+2. Lava Ball Skin — 150 points
+3. Ice Ball Skin — 150 points
+4. Carbon Paddle Skin — 120 points
+5. Gold Paddle Skin — 250 points
+6. Volcano Theme — 300 points
+7. Arcade Grid Theme — 200 points
+8. Spark Trail Effect — 180 points
+9. Heavy Hit Impact Effect — 220 points
+10. Bonus Level Pack — 500 points
+
+The marketplace must not allow duplicate purchases unless intentionally designed.
+
+## 4.4 Currency System
+
+Players earn currency by:
+
+Destroying bricks
+Completing levels
+Achieving combos
+Finishing levels with lives remaining
+Clearing reward bricks
+Completing daily or bonus challenge if implemented
+
+Currency must be separate from score.
+
+Score represents performance.
+
+Currency represents spendable progression.
+
+The results screen must clearly show:
+
+Score earned
+Currency earned
+Bonus currency
+Total currency
+New unlocks if any
+
+## 4.5 Networking Upgrade
+
+Implement a low-latency server sync feature.
+
+This does not need to be a fully commercial backend, but it must be real enough to evidence the selected upgrade.
+
+Acceptable networking implementations:
+
+Simple REST API sync for player profile.
+
+Firebase / Supabase / custom .NET minimal API endpoint.
+
+Local LAN test server.
+
+Mock server with documented request / response behavior if live hosting is not possible.
+
+Cloud save sync for player profile.
+
+Lightweight leaderboard submission.
+
+The networking feature must do at least one of the following:
+
+Sync player profile to server.
+
+Upload best score.
+
+Download leaderboard entries.
+
+Sync purchased marketplace items.
+
+Sync last completed level.
+
+Show online / offline sync status.
+
+The game must remain playable offline.
+
+Required networking UI:
+
+Sync status indicator: Online, Offline, Syncing, Synced, Failed.
+
+Manual sync button in settings or profile screen.
+
+Error handling for failed sync.
+
+Timestamp of last successful sync.
+
+Suggested network payload:
+
+```json
+{
+  "playerId": "generated-player-id",
+  "displayName": "Player",
+  "bestScore": 12500,
+  "bestLevelReached": 8,
+  "currency": 740,
+  "purchasedItems": ["ball_neon", "paddle_gold"],
+  "equippedItems": {
+    "ball": "ball_neon",
+    "paddle": "paddle_gold",
+    "theme": "theme_volcano"
+  },
+  "lastUpdatedUtc": "2026-05-01T20:30:00Z"
+}
+```
+
+## 4.6 Publish to Store Upgrade
+
+Prepare the project as if it will be submitted to a public store or public game platform.
+
+At minimum, produce:
+
+Game title
+Game description
+Short description
+Icon
+Screenshots
+Feature graphic or banner
+Build file or playable export
+Privacy note if networking exists
+Version number
+Release notes
+Store listing copy
+Public link or staged release evidence if possible
+
+Supported publishing targets:
+
+Google Play Store
+Apple App Store
+Steam
+itch.io
+gd.games
+Instructor-approved public webpage
+GitHub Pages build page if applicable
+Downloadable build hosted in cloud folder
+
+If real app store submission is not possible, create a complete simulated store submission packet and publish to itch.io, gd.games, or a public/instructor-approved page.
+
+## 4.7 Video Trailer Upgrade
+
+Produce a short cinematic marketing teaser.
+
+Trailer requirements:
+
+Length: 30 to 60 seconds
+Format: landscape
+Resolution: preferably 1920x1080
+Audio: music or sound effects included
+Content: gameplay footage, title card, feature callouts, marketplace glimpse, progression, final call to action
+Deliverable: MP4 file in `Docs/Trailer/` or linked in final submission
+
+Suggested trailer structure:
+
+0–3 seconds: Game title reveal
+3–10 seconds: Fast gameplay clips
+10–18 seconds: Brick types and combos
+18–25 seconds: Marketplace customization
+25–35 seconds: Level progression and challenge
+35–45 seconds: Online sync / leaderboard / profile
+45–55 seconds: Final montage
+55–60 seconds: “Play BrickBlast: Velocity Market”
+
+## 4.8 Testing and Polish
+
+The game must include balancing and testing evidence.
+
+Test:
+
+Game startup
+Main menu navigation
+Level loading
+Ball launch
+Paddle movement
+Brick collision
+Level completion
+Game over
+Pause / resume
+Marketplace purchase
+Marketplace equip
+Save / load
+Offline play
+Network sync success
+Network sync failure
+Public build launch
+Trailer playback
+Final submission links
+
+Document all tests in `Docs/Testing/TestingLog.md`.
+
+---
+
+# 5. Tier-Based Requirement Expansion
+
+## 5.1 Fully Published Project
+
+The final product must be stable, polished, and presentable.
+
+Required evidence:
+
+Playable build.
+
+Screenshots.
+
+Trailer.
+
+Store listing or public page.
+
+Version number.
+
+Release notes.
+
+Known issues list.
+
+Instructions for running the game.
+
+## 5.2 Professional Documentation
+
+Create documentation that could stand on its own for reviewers, teammates, and future maintainers.
+
+Required docs:
+
+`Docs/README.md`
+`Docs/Architecture/SystemOverview.md`
+`Docs/Architecture/ClassDiagram.md`
+`Docs/Architecture/GameFlow.md`
+`Docs/Testing/TestingLog.md`
+`Docs/Planning/TaskExecutionPlan.md`
+`Docs/Planning/CommunicationLog.md`
+`Docs/Submission/FinalSubmissionChecklist.md`
+`Docs/Submission/AIUsageDeclaration.md`
+`Docs/Submission/StoreListingCopy.md`
+`Docs/Submission/ReleaseNotes.md`
+
+## 5.3 Advanced Prototype
+
+The project must demonstrate ambition beyond the starter.
+
+Evidence of advanced work:
+
+Multiple systems interacting.
+
+Marketplace integrated with currency and persistence.
+
+Networking tied to actual profile, leaderboard, or sync data.
+
+Multiple levels.
+
+Multiple brick types.
+
+Clear UI flow.
+
+Functional save / load.
+
+Playable build.
+
+Trailer.
+
+## 5.4 Testing Log
+
+Maintain a testing log with entries like:
+
+Date
+Tester
+Build version
+Feature tested
+Steps performed
+Expected result
+Actual result
+Status
+Bug link or note
+Fix verification
+
+Example:
+
+```text
+Date: 2026-05-06
+Tester: Curtis Loop
+Build: v0.7.2
+Feature: Marketplace purchase persistence
+Steps:
+1. Earn 300 currency.
+2. Buy Neon Ball.
+3. Equip Neon Ball.
+4. Quit game.
+5. Relaunch game.
+Expected:
+Neon Ball remains purchased and equipped.
+Actual:
+Passed.
+Status:
+Complete.
+Evidence:
+Docs/Screenshots/marketplace_persistence_pass.png
+```
+
+## 5.5 Published / Public Release Surface
+
+Prepare at least one public or instructor-approved release surface.
+
+Required evidence:
+
+URL to public page or upload folder.
+
+Screenshot of page.
+
+Build file.
+
+Description.
+
+Installation instructions.
+
+Version number.
+
+Known issue list.
+
+## 5.6 Marketing Materials
+
+Create:
+
+Game logo or title card.
+
+Icon.
+
+At least 5 screenshots.
+
+Feature banner.
+
+Short description.
+
+Long description.
+
+Trailer.
+
+Store listing copy.
+
+## 5.7 Architecture Diagrams
+
+Create diagrams explaining:
+
+Game state flow.
+
+Class relationships.
+
+Data persistence flow.
+
+Marketplace flow.
+
+Networking sync flow.
+
+These can be Mermaid diagrams, exported images, or structured markdown diagrams.
+
+Example Mermaid diagram:
+
+```mermaid
+flowchart TD
+    Boot --> MainMenu
+    MainMenu --> Gameplay
+    Gameplay --> Paused
+    Paused --> Gameplay
+    Gameplay --> LevelComplete
+    Gameplay --> GameOver
+    LevelComplete --> Results
+    GameOver --> Results
+    Results --> Marketplace
+    Results --> MainMenu
+    Marketplace --> MainMenu
+    MainMenu --> Settings
+    Settings --> MainMenu
+```
+
+---
+
+# 6. Task Execution Plan
+
+Use a four-phase delivery plan across the three-week window.
+
+## Phase 1: Core Loop, Controls, and Playable Baseline
+
+Required output:
+
+Playable prototype with one complete demo loop.
+
+Tasks:
+
+Import or clone BrickBlast starter.
+
+Verify it runs.
+
+Create canonical folder structure.
+
+Refactor major logic into object-oriented classes.
+
+Implement GameManager.
+
+Implement GameState model.
+
+Implement paddle control.
+
+Implement ball launch and reset.
+
+Implement brick collision.
+
+Implement score system.
+
+Implement level success condition.
+
+Implement game over condition.
+
+Implement main menu.
+
+Implement pause / resume.
+
+Implement basic results screen.
+
+Add first two levels.
+
+Document starter proof:
+
+Exact title.
+
+Working URL.
+
+Screenshot of approved starter source.
+
+Reason why starter was chosen.
+
+## Phase 2: Mechanics, Content, and Selected Upgrades
+
+Required output:
+
+Original systems, multiple levels, and upgrade foundations.
+
+Tasks:
+
+Add multiple brick types.
+
+Add at least 8 levels.
+
+Add currency system.
+
+Add marketplace screen.
+
+Add purchase logic.
+
+Add equip logic.
+
+Add persistence.
+
+Add player profile data.
+
+Add audio feedback.
+
+Add visual effects.
+
+Add screen shake or impact feedback.
+
+Add settings screen.
+
+Add networking service skeleton.
+
+Implement sync endpoint or mock API.
+
+Show online / offline state.
+
+Add sync status UI.
+
+## Phase 3: Balancing, Saves, User Feedback, and Publication Prep
+
+Required output:
+
+Stable feature-complete build ready for testing.
+
+Tasks:
+
+Balance brick health.
+
+Balance currency rewards.
+
+Balance marketplace prices.
+
+Fix ball stuck cases.
+
+Fix collision edge cases.
+
+Test save / load.
+
+Test marketplace persistence.
+
+Test offline network fallback.
+
+Create screenshots.
+
+Create app icon.
+
+Create title card.
+
+Create store listing copy.
+
+Create release notes.
+
+Create privacy note.
+
+Prepare public build.
+
+Prepare testing log.
+
+Create architecture docs.
+
+## Phase 4: Final Export, Documentation, and Demo Assets
+
+Required output:
+
+Final export, documentation, and demo assets.
+
+Tasks:
+
+Record trailer.
+
+Export trailer in landscape MP4.
+
+Finalize README.
+
+Finalize architecture diagrams.
+
+Finalize testing log.
+
+Finalize AI usage declaration.
+
+Finalize submission checklist.
+
+Upload build to cloud folder or public platform.
+
+Verify all links.
+
+Prepare final demo walkthrough.
+
+Capture final proof package.
+
+Make sure every checklist item has evidence.
+
+---
+
+# 7. Implementation Requirements by System
+
+## 7.1 GameManager
+
+GameManager must coordinate the global game state.
+
+Responsibilities:
+
+Initialize core managers.
+
+Track active GameState.
+
+Start game.
+
+Pause game.
+
+Resume game.
+
+Restart level.
+
+Advance level.
+
+Handle game over.
+
+Handle level complete.
+
+Coordinate save requests.
+
+Coordinate UI transitions.
+
+Expose events to other managers where possible.
+
+Avoid putting brick collision logic directly in GameManager.
+
+## 7.2 LevelManager
+
+LevelManager must load and manage level definitions.
+
+Responsibilities:
+
+Load level data.
+
+Spawn bricks.
+
+Track required bricks remaining.
+
+Advance levels.
+
+Unlock levels.
+
+Return current level metadata.
+
+Notify GameManager when level is complete.
+
+Support at least 8 levels.
+
+## 7.3 Brick and BrickManager
+
+Brick must represent an individual brick.
+
+Responsibilities:
+
+Store health.
+
+Receive damage.
+
+Update visual state.
+
+Grant score / currency.
+
+Trigger effects.
+
+Destroy itself safely.
+
+BrickManager responsibilities:
+
+Spawn bricks.
+
+Track active bricks.
+
+Track required bricks.
+
+Clear level.
+
+Register brick destroyed events.
+
+## 7.4 BallController
+
+BallController must manage movement and collision.
+
+Responsibilities:
+
+Launch ball.
+
+Reset ball.
+
+Apply velocity.
+
+Handle wall collision.
+
+Handle paddle collision.
+
+Handle brick collision.
+
+Clamp speed.
+
+Prevent stuck behavior.
+
+Trigger audio / effects.
+
+Support ball skin.
+
+## 7.5 PaddleController
+
+PaddleController must manage player movement.
+
+Responsibilities:
+
+Read touch / mouse input.
+
+Clamp to bounds.
+
+Handle paddle size.
+
+Apply equipped skin.
+
+Support powerup modifiers.
+
+Keep movement smooth and responsive.
+
+## 7.6 ScoreManager
+
+ScoreManager must manage score.
+
+Responsibilities:
+
+Add score when bricks are hit or destroyed.
+
+Apply combo bonuses.
+
+Track level score.
+
+Track lifetime score.
+
+Report score to results screen.
+
+Submit best score to profile and network sync.
+
+## 7.7 CurrencyManager
+
+CurrencyManager must manage earnable points.
+
+Responsibilities:
+
+Add currency from gameplay.
+
+Calculate level completion bonus.
+
+Calculate remaining lives bonus.
+
+Track run currency.
+
+Track total currency.
+
+Spend currency.
+
+Prevent negative balance.
+
+Save currency changes.
+
+## 7.8 MarketplaceManager
+
+MarketplaceManager must manage item purchasing.
+
+Responsibilities:
+
+Load item definitions.
+
+Display items.
+
+Check affordability.
+
+Purchase item.
+
+Equip item.
+
+Prevent duplicate purchase.
+
+Handle insufficient funds.
+
+Save marketplace state.
+
+Update UI.
+
+## 7.9 InventoryManager
+
+InventoryManager must manage ownership and equipped items.
+
+Responsibilities:
+
+Track purchased item IDs.
+
+Track equipped item per category.
+
+Return equipped cosmetic.
+
+Apply cosmetics to ball, paddle, theme, effects.
+
+Persist inventory.
+
+## 7.10 SaveSystem
+
+SaveSystem must manage local persistence.
+
+Responsibilities:
+
+Create save file if missing.
+
+Load profile.
+
+Save profile.
+
+Handle corrupted save gracefully.
+
+Support reset progress.
+
+Store version number.
+
+Avoid crashing if save data is invalid.
+
+## 7.11 NetworkSyncService
+
+NetworkSyncService must manage the selected networking upgrade.
+
+Responsibilities:
+
+Detect online status.
+
+Submit player profile.
+
+Download profile or leaderboard data.
+
+Handle timeouts.
+
+Handle failed sync.
+
+Store last sync timestamp.
+
+Expose sync status to UI.
+
+Never block gameplay if network fails.
+
+## 7.12 UIManager
+
+UIManager must handle screens.
+
+Required screens:
+
+Main Menu
+Gameplay HUD
+Pause Menu
+Results Screen
+Marketplace
+Settings
+Credits
+Sync Status
+Error Popup or Toast
+Confirmation Dialog
+
+UIManager responsibilities:
+
+Show / hide screens.
+
+Update score and currency displays.
+
+Update level displays.
+
+Display marketplace states.
+
+Display save / sync feedback.
+
+Keep UI readable on mobile.
+
+## 7.13 AudioManager
+
+AudioManager must handle sound.
+
+Required sounds:
+
+Button tap
+Ball launch
+Paddle hit
+Brick hit
+Brick destroyed
+Powerup pickup
+Purchase success
+Purchase failed
+Level complete
+Game over
+
+Optional:
+
+Background music
+Marketplace music
+Trailer mix
+
+## 7.14 AnalyticsLogger
+
+Implement a lightweight local logger for debugging and evidence.
+
+Track events like:
+
+Game started
+Level started
+Level completed
+Game over
+Item purchased
+Item equipped
+Profile saved
+Sync attempted
+Sync succeeded
+Sync failed
+
+Logs may be written to console, local debug file, or in-game debug screen.
+
+---
+
+# 8. Content Requirements
+
+## 8.1 Required Levels
+
+Create at least 8 levels.
+
+Each level must have:
+
+Name
+Layout
+Difficulty
+Reward value
+Completion condition
+Testing status
+
+Example level list:
+
+Level 1: First Contact
+Simple rows of standard bricks. Teaches basic movement and ball launch.
+
+Level 2: Wallbreaker
+More bricks, slightly faster ball, wider layout.
+
+Level 3: Reinforced
+Introduces durable bricks.
+
+Level 4: Bonus Grid
+Introduces reward bricks.
+
+Level 5: Pressure Line
+Introduces hazard bricks.
+
+Level 6: Shifting Core
+Introduces moving bricks.
+
+Level 7: Market Trial
+Mixed brick types and higher reward value.
+
+Level 8: Velocity Crown
+Final showcase level with durable, moving, reward, and hazard bricks.
+
+## 8.2 Required Marketplace Items
+
+Create at least 8 items.
+
+Each item must have:
+
+ID
+Name
+Category
+Description
+Cost
+Preview
+Purchased state
+Equipped state where applicable
+
+Suggested item table:
+
+```text
+ball_neon
+Neon Ball
+Ball Skin
+A glowing arcade-style ball skin.
+100
+
+ball_lava
+Lava Ball
+Ball Skin
+A molten ball skin with hot impact feedback.
+150
+
+ball_ice
+Ice Ball
+Ball Skin
+A cold blue ball skin with crisp trail effect.
+150
+
+paddle_carbon
+Carbon Paddle
+Paddle Skin
+A sleek dark paddle skin.
+120
+
+paddle_gold
+Gold Paddle
+Paddle Skin
+A premium gold paddle skin.
+250
+
+theme_volcano
+Volcano Theme
+Background Theme
+A dramatic molten background theme.
+300
+
+theme_arcade
+Arcade Grid Theme
+Background Theme
+A neon arcade background.
+200
+
+trail_spark
+Spark Trail
+Ball Trail
+Adds a bright spark trail behind the ball.
+180
+
+impact_heavy
+Heavy Impact
+Impact Effect
+Adds stronger brick destruction feedback.
+220
+
+bonus_pack_01
+Bonus Level Pack
+Level Unlock
+Unlocks an extra challenge stage.
+500
+```
+
+## 8.3 Required UI Copy
+
+Use polished UI text.
+
+Main menu buttons:
+
+Play
+Marketplace
+Settings
+Credits
+Quit
+
+Pause menu buttons:
+
+Resume
+Restart Level
+Marketplace
+Main Menu
+
+Results screen:
+
+Level Complete
+Score
+Currency Earned
+Bonus
+Total Currency
+Next Level
+Replay
+Marketplace
+Main Menu
+
+Game over screen:
+
+Game Over
+Final Score
+Currency Earned
+Retry
+Marketplace
+Main Menu
+
+Marketplace copy:
+
+Owned
+Equipped
+Equip
+Buy
+Insufficient Points
+Purchase Complete
+Not Enough Points
+Preview
+Back
+
+Sync copy:
+
+Online
+Offline
+Syncing
+Synced
+Sync Failed
+Last Synced
+Manual Sync
+
+## 8.4 Visual Polish Requirements
+
+Add:
+
+Screen shake on strong hits.
+
+Particle burst on brick destruction.
+
+Trail on ball.
+
+Flash or color transition on damaged durable bricks.
+
+Button hover / press state.
+
+Animated results count-up if feasible.
+
+Background theme support.
+
+Readable typography.
+
+Consistent color palette.
+
+Avoid placeholder art in final build unless intentionally styled.
+
+## 8.5 Audio Polish Requirements
+
+Add satisfying sound feedback.
+
+Minimum required:
+
+Button tap
+Ball launch
+Paddle hit
+Brick damage
+Brick destroy
+Reward collect
+Purchase success
+Purchase denied
+Level complete
+Game over
+
+Volume controls must exist in settings if audio is included.
+
+---
+
+# 9. Process and Communication Log Requirements
+
+Create and maintain `Docs/Planning/CommunicationLog.md`.
+
+The communication log must show team organization and progress.
+
+Required log sections:
+
+Project overview
+Team members
+Roles
+Meeting cadence
+Task ownership
+Progress updates
+Blockers
+Decisions
+Handoffs
+Evidence links
+
+Team manifest:
+
+Curtis Loop — Team Lead — Guaranteed delivery by May 13, 2026, time of presentation
+Alyssa Puentes — Co-Lead — Guaranteed delivery by May 13, 2026, time of presentation
+Andrea Albisser — Co-Lead — Guaranteed delivery by May 13, 2026, time of presentation
+
+Use this structure:
+
+```markdown
+# Communication Log
+
+## Team
+- Curtis Loop: Team Lead
+- Alyssa Puentes: Co-Lead
+- Andrea Albisser: Co-Lead
+
+## Cadence
+The team reviews progress weekly and records blockers, completed work, and next actions.
+
+## Log Entries
+
+### Entry 001
+Date:
+Participants:
+Topics:
+Decisions:
+Blockers:
+Next Actions:
+Evidence:
+```
+
+---
+
+# 10. Documentation Requirements
+
+## 10.1 README.md
+
+Create a complete README with:
+
+Project title
+Short description
+Team
+Tech stack
+Starter source
+Installation instructions
+Build instructions
+Gameplay instructions
+Controls
+Feature list
+Marketplace explanation
+Networking explanation
+Persistence explanation
+Known issues
+Credits
+Submission links
+
+## 10.2 SystemOverview.md
+
+Explain:
+
+Core architecture.
+
+Major systems.
+
+How managers communicate.
+
+How gameplay state flows.
+
+How data is saved.
+
+How marketplace works.
+
+How networking works.
+
+## 10.3 ClassDiagram.md
+
+Include a class diagram in Mermaid or text format.
+
+Minimum relationships:
+
+GameManager uses LevelManager, UIManager, ScoreManager, CurrencyManager, SaveSystem, NetworkSyncService.
+
+LevelManager creates Brick objects through BrickManager.
+
+BallController collides with Brick and PaddleController.
+
+MarketplaceManager uses CurrencyManager and InventoryManager.
+
+SaveSystem saves PlayerProfile.
+
+NetworkSyncService syncs PlayerProfile.
+
+## 10.4 GameFlow.md
+
+Document the player journey from app launch to level completion.
+
+Include:
+
+Main menu flow.
+
+Gameplay flow.
+
+Pause flow.
+
+Results flow.
+
+Marketplace flow.
+
+Save / sync flow.
+
+Failure flow.
+
+## 10.5 TestingLog.md
+
+Document every test run.
+
+Required minimum: 20 test entries.
+
+Cover all critical systems.
+
+## 10.6 AIUsageDeclaration.md
+
+Use this structure:
+
+```markdown
+# AI Usage Declaration
+
+AI tools were used as optional pairing aids for planning, code review, documentation drafting, debugging suggestions, and submission organization.
+
+All AI-assisted output was reviewed, understood, tested, and owned by the team before final submission.
+
+AI was not used as a replacement for team responsibility. The final implementation, build decisions, testing evidence, and submission package were validated by the team.
+
+Tools used:
+- ChatGPT or equivalent planning assistant
+- Code completion tools if applicable
+- Documentation drafting assistance if applicable
+
+Reviewed by:
+- Curtis Loop
+- Alyssa Puentes
+- Andrea Albisser
+```
+
+## 10.7 FinalSubmissionChecklist.md
+
+Create a strict checklist with evidence links.
+
+Include every item from the covenant and this prompt.
+
+---
+
+# 11. Submission Checklist
+
+The final submission must include the following.
+
+## 11.1 Project and Build
+
+* Fully polished project.
+* Playable build.
+* Final source code.
+* Approved starter source evidence.
+* Technical declaration: Visual Basic / .NET.
+* Object-oriented structures present.
+* Folder structure organized as `Assets / Scripts / Scenes / Prefabs / Docs`.
+* At least 8 levels.
+* Complete gameplay loop.
+* Main menu.
+* Gameplay scene.
+* Pause menu.
+* Results screen.
+* Marketplace screen.
+* Settings screen.
+* Credits screen.
+* Success state.
+* Fail state.
+
+## 11.2 Systems
+
+* Score system.
+* Currency system.
+* Marketplace purchase system.
+* Marketplace equip system.
+* Save / load system.
+* Multiple brick types.
+* Level progression.
+* Ball controller.
+* Paddle controller.
+* Game state manager.
+* Audio manager.
+* UI manager.
+* Networking sync feature.
+* Offline fallback.
+* Sync status UI.
+
+## 11.3 Selected Upgrades
+
+* Networking upgrade implemented and evidenced.
+* Publish to Store upgrade implemented and evidenced.
+* Marketplace System upgrade implemented and evidenced.
+* Video Trailer upgrade implemented and evidenced.
+
+## 11.4 Documentation
+
+* README.
+* Architecture overview.
+* Class diagram.
+* Game flow diagram.
+* Testing log.
+* Communication log.
+* Task execution plan.
+* AI usage declaration.
+* Store listing copy.
+* Release notes.
+* Final submission checklist.
+* Known issues.
+* Screenshots.
+* Proof package.
+
+## 11.5 Marketing and Public Release
+
+* Game icon.
+* Title card.
+* At least 5 screenshots.
+* Trailer MP4.
+* Store listing short description.
+* Store listing long description.
+* Public link or upload evidence.
+* Version number.
+* Release notes.
+
+## 11.6 Evidence
+
+For every major requirement, include at least one of:
+
+Screenshot
+Video clip
+Commit link
+Build file
+Documentation link
+Test log entry
+Diagram
+Public release URL
+Cloud folder URL
+Recorded demo
+Exported artifact
+
+---
+
+# 12. Evaluation Rubric Optimization
+
+The project will be judged across execution, systems, documentation, originality, research / testing, and presentation. Optimize for all categories.
+
+## 12.1 Execution
+
+To maximize execution score:
+
+Make the game stable.
+
+Make it launch quickly.
+
+Make controls responsive.
+
+Make levels completable.
+
+Avoid crashes.
+
+Avoid dead ends.
+
+Avoid missing screens.
+
+Make final build easy to run.
+
+## 12.2 Systems
+
+To maximize systems score:
+
+Use clean object-oriented architecture.
+
+Implement marketplace deeply, not superficially.
+
+Connect currency to gameplay and purchases.
+
+Connect persistence to progression.
+
+Connect networking to player profile or leaderboard.
+
+Use multiple brick types.
+
+Use structured level data.
+
+## 12.3 Documentation
+
+To maximize documentation score:
+
+Write complete docs.
+
+Include diagrams.
+
+Include testing evidence.
+
+Include planning evidence.
+
+Explain design decisions.
+
+Explain technical architecture.
+
+Explain how to run and verify the build.
+
+## 12.4 Originality
+
+To maximize originality score:
+
+Add unique visual identity.
+
+Add themed marketplace items.
+
+Add progression.
+
+Add polished effects.
+
+Add levels with distinct layouts.
+
+Add branded title and trailer.
+
+Avoid looking like an unchanged starter.
+
+## 12.5 Research / Testing
+
+To maximize testing score:
+
+Maintain a detailed testing log.
+
+Include failed tests and fixes.
+
+Include balance changes.
+
+Include device / platform testing.
+
+Include network failure testing.
+
+Include save corruption or reset testing if possible.
+
+## 12.6 Presentation
+
+To maximize presentation score:
+
+Prepare a clean demo script.
+
+Create a trailer.
+
+Create screenshots.
+
+Prepare public page.
+
+Make the README readable.
+
+Make the final folder organized.
+
+Make the final submission easy to inspect.
+
+---
+
+# 13. Final Demo Script
+
+Use this script for the presentation walkthrough.
+
+## 13.1 Opening
+
+“This is BrickBlast: Velocity Market, a mobile-focused 2D brick blast game built from the approved BrickBlast starter. The final version adds progression, multiple brick types, a points-based marketplace, persistent profile data, online sync, and a public release package.”
+
+## 13.2 Show Main Menu
+
+Point out:
+
+Play
+Marketplace
+Settings
+Credits
+Version number
+
+## 13.3 Show Gameplay
+
+Demonstrate:
+
+Paddle movement
+Ball launch
+Brick collisions
+Brick destruction
+Score increase
+Currency gain
+Different brick types
+Pause / resume
+Level complete or game over
+
+## 13.4 Show Results
+
+Point out:
+
+Score
+Currency earned
+Bonuses
+Next level
+Marketplace button
+
+## 13.5 Show Marketplace
+
+Demonstrate:
+
+Currency balance
+Buying item
+Insufficient funds if useful
+Equipping item
+Cosmetic change in gameplay
+Persistence after reload if possible
+
+## 13.6 Show Networking
+
+Demonstrate:
+
+Sync status
+Manual sync
+Last synced timestamp
+Online or offline behavior
+Leaderboard or profile upload if implemented
+
+## 13.7 Show Documentation
+
+Open:
+
+README
+Architecture diagram
+Testing log
+Communication log
+Submission checklist
+AI usage declaration
+
+## 13.8 Show Trailer
+
+Play the landscape trailer.
+
+## 13.9 Closing
+
+“This final build satisfies the mobile game track, the Visual Basic / .NET declaration, the object-oriented structure requirement, the marketplace system, networking upgrade, publication package, video trailer, testing log, and documentation requirements.”
+
+---
+
+# 14. Acceptance Criteria
+
+Do not consider the project complete until all of the following are true.
+
+The project launches without errors.
+
+The player can complete at least one full level.
+
+The player can fail and retry.
+
+The player can earn score.
+
+The player can earn currency.
+
+The player can buy at least one marketplace item.
+
+The purchased item persists after restart.
+
+The player can equip at least one item.
+
+The equipped item visibly changes the game.
+
+At least 8 levels exist.
+
+At least 5 brick types exist.
+
+The game has sound feedback.
+
+The game has visual feedback.
+
+The game has a main menu.
+
+The game has a pause menu.
+
+The game has a results screen.
+
+The game has settings.
+
+The game has credits.
+
+The game has local saving.
+
+The game has networking or documented server sync behavior.
+
+The game handles offline mode.
+
+The project has a trailer.
+
+The project has screenshots.
+
+The project has store listing copy.
+
+The project has a README.
+
+The project has architecture docs.
+
+The project has a testing log.
+
+The project has a communication log.
+
+The project has an AI usage declaration.
+
+The project has a final submission checklist.
+
+The project has public release evidence or instructor-approved release evidence.
+
+Every selected upgrade has evidence.
+
+---
+
+# 15. Final Instruction to the Vibe Coder
+
+Build this as a complete final project, not as a minimal classroom assignment.
+
+Prioritize finishing the full vertical slice first, then expand content and polish. Do not overbuild isolated features that do not connect to the player experience. Every system must be visible, testable, documented, and evidenced.
+
+When choosing between technical elegance and submission readiness, preserve both where possible, but never leave a required deliverable missing. A smaller polished feature with documentation and evidence is better than a larger unfinished system.
+
+Use the BrickBlast starter as the foundation, but make the final result clearly original through progression, marketplace customization, multiple brick behaviors, polished UI, sound, persistence, networking, and publication materials.
+
+Final deliverable must include the playable game, source code, documentation, test evidence, architecture diagrams, communication logs, marketplace system, networking proof, publish-ready package, and landscape video trailer.

@@ -116,13 +116,33 @@ Public Class Form1
 
 #Region "Game State Enum"
     Private Enum GameState
+        NameEntry
         Menu
         Playing
         Paused
         LevelComplete
+        GameOver
         Options
         HighScore
+        Store
+        Credits
     End Enum
+
+    ' ── Store item categories ──────────────────────────────────────────────────
+    Private Enum StoreCategory
+        Balls
+        Bricks
+        Bonuses
+    End Enum
+
+    Private Structure StoreItem
+        Public Id As String
+        Public Name As String
+        Public Description As String
+        Public Price As Integer
+        Public Category As StoreCategory
+        Public IsBase As Boolean      ' Base items are free and pre-owned
+    End Structure
 #End Region
 
 #Region "Data Structures"
@@ -212,6 +232,7 @@ Public Class Form1
 
     Private _rng As New Random()
     Private _frameCount As Integer = 0
+    Private _proceduralSeed As Integer = 0   ' set fresh each new game; drives brick palette + power-up shapes
     Private _screenShake As Integer = 0
     Private _flashTimer As Integer = 0
 
@@ -293,6 +314,63 @@ Public Class Form1
 
     Private _sfxStyleNames() As String = {"Classic", "Style B", "Style C", "Style D", "Retro Arcade"}
 
+    ' ── In-game economy ───────────────────────────────────────────────────────
+    ' Coins are earned while playing (separate from display score).
+    ' All coin earnings use _coinsEarnedThisSession; balance is persisted.
+    Private _coinBalance As Integer = 0
+    Private _coinsEarnedThisSession As Integer = 0
+
+    ' Store navigation
+    Private _storeCategory As StoreCategory = StoreCategory.Balls
+    Private _storeSelectedIndex As Integer = 0
+
+    ' Active cosmetic selections
+    Private _activeBallSkin As String = "base"
+    Private _activeBrickPalette As String = "base"
+    Private _activeBonusPack As String = "base"
+
+    ' Coin earn rates (per brick broken, scaled by combo)
+    Private Const COIN_PER_BRICK As Integer = 1
+    Private Const COIN_LEVEL_BONUS As Integer = 10
+
+    ' Store catalog — base items are free; others cost coins
+    Private ReadOnly _storeItems As New List(Of StoreItem)
+
+    ' Persistence path for store save data — set per-player in SetPlayerProfile()
+    Private _storeSavePath As String = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "BrickBlast", "store.json")
+
+    ' Per-player profile
+    Private ReadOnly _playersDir As String = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "BrickBlast", "players")
+    Private _playerName As String = ""
+    Private _nameEntryInput As String = ""
+
+    ' JSON-serializable save record for the economy
+    Private Class StoreSaveData
+        Public Property PlayerName As String
+        Public Property CoinBalance As Integer
+        Public Property OwnedItems As List(Of String)
+        Public Property ActiveBallSkin As String
+        Public Property ActiveBrickPalette As String
+        Public Property ActiveBonusPack As String
+        Public Sub New()
+            OwnedItems = New List(Of String)
+        End Sub
+    End Class
+
+    Private _ownedItems As New HashSet(Of String)
+    Private _devMode As Boolean = False
+
+    ' ── Networking ──────────────────────────────────────────────────────────
+    Private Const SyncEndpointUrl As String = "https://your-sync-endpoint.example.com/api/profile"
+    Private _syncStatus As String = "Offline"   ' Offline | Syncing | Synced | Failed
+    Private _lastSyncUtc As DateTime = DateTime.MinValue
+    Private _httpClient As New System.Net.Http.HttpClient() With {.Timeout = TimeSpan.FromSeconds(5)}
+
+
     Private _sfxData()() As Integer = {
         New Integer() {300, 60, 500, 80, 600, 80, 1000, 120, 200, 400, 900, 300},
         New Integer() {660, 50, 880, 70, 1047, 70, 1319, 100, 330, 350, 1047, 350},
@@ -341,8 +419,9 @@ Public Class Form1
         _fnt12c = New Font("Consolas", 12, FontStyle.Regular)
         _brShadow = New SolidBrush(Color.FromArgb(180, 0, 0, 0))
         InitStarField()
-        _state = GameState.Menu
+        _state = GameState.NameEntry
         LoadHighScores()
+        InitStoreItems()   ' seeds base-owned items; real profile loads after name entry
         PreGenerateAllMusic()
         GameTimer.Enabled = True
         StartMusic()
@@ -379,6 +458,22 @@ Public Class Form1
         If _pendingHighScore Then
             Return
         End If
+        If _state = GameState.NameEntry Then
+            Select Case e.KeyCode
+                Case Keys.Back
+                    If _nameEntryInput.Length > 0 Then _nameEntryInput = _nameEntryInput.Substring(0, _nameEntryInput.Length - 1)
+                Case Keys.Enter
+                    Dim entered = _nameEntryInput.Trim()
+                    If entered.Length > 0 Then
+                        SetPlayerProfile(entered)
+                        _state = GameState.Menu
+                    End If
+                Case Else
+                    Dim c = KeyToChar(e)
+                    If c IsNot Nothing AndAlso _nameEntryInput.Length < 16 Then _nameEntryInput &= c
+            End Select
+            Return
+        End If
         If _state = GameState.HighScore Then
             If e.KeyCode = Keys.Back Then
                 If _nameInput.Length > 0 Then _nameInput = _nameInput.Substring(0, _nameInput.Length - 1)
@@ -396,6 +491,43 @@ Public Class Form1
                 Dim c = KeyToChar(e)
                 If c IsNot Nothing AndAlso _nameInput.Length < 12 Then _nameInput &= c
             End If
+            Return
+        End If
+
+        If _state = GameState.Credits Then
+            If e.KeyCode = Keys.Escape OrElse e.KeyCode = Keys.Enter OrElse e.KeyCode = Keys.C Then
+                _state = GameState.Menu
+            End If
+            Return
+        End If
+
+        If _state = GameState.Store Then
+            Select Case e.KeyCode
+                Case Keys.Left, Keys.A
+                    _storeCategory = CType((_storeCategory - 1 + 3) Mod 3, StoreCategory)
+                    _storeSelectedIndex = 0
+                Case Keys.Right, Keys.D
+                    _storeCategory = CType((_storeCategory + 1) Mod 3, StoreCategory)
+                    _storeSelectedIndex = 0
+                Case Keys.Up
+                    Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+                    If catItems.Count > 0 Then _storeSelectedIndex = (_storeSelectedIndex - 1 + catItems.Count) Mod catItems.Count
+                Case Keys.Down
+                    Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+                    If catItems.Count > 0 Then _storeSelectedIndex = (_storeSelectedIndex + 1) Mod catItems.Count
+                Case Keys.Enter, Keys.Space
+                    Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+                    If _storeSelectedIndex >= 0 AndAlso _storeSelectedIndex < catItems.Count Then
+                        Dim sel = catItems(_storeSelectedIndex)
+                        If IsOwned(sel.Category, sel.Id) Then
+                            EquipItem(sel)
+                        Else
+                            PurchaseItem(sel)
+                        End If
+                    End If
+                Case Keys.Escape, Keys.H, Keys.O
+                    _state = GameState.Menu
+            End Select
             Return
         End If
 
@@ -441,8 +573,26 @@ Public Class Form1
                     End If
                 Case Keys.Enter, Keys.Space
                     If _settingsSelection = 5 Then _colorblindMode = Not _colorblindMode
+                Case Keys.S
+                    SyncProfileAsync()
                 Case Keys.O, Keys.H, Keys.Escape
                     _state = _previousState
+            End Select
+            Return
+        End If
+
+        If _state = GameState.GameOver Then
+            Select Case e.KeyCode
+                Case Keys.R, Keys.Enter, Keys.Space
+                    _highScoreDelayFrames = 0 : _pendingHighScore = False
+                    StartNewGame()
+                Case Keys.S
+                    _highScoreDelayFrames = 0 : _pendingHighScore = False
+                    _storeCategory = StoreCategory.Balls : _storeSelectedIndex = 0
+                    _state = GameState.Store
+                Case Keys.Escape, Keys.M
+                    _highScoreDelayFrames = 0 : _pendingHighScore = False
+                    _state = GameState.Menu
             End Select
             Return
         End If
@@ -479,6 +629,24 @@ Public Class Form1
                     _previousState = _state
                     _state = GameState.Options
                 End If
+            Case Keys.S
+                If _state = GameState.Menu Then
+                    _storeCategory = StoreCategory.Balls
+                    _storeSelectedIndex = 0
+                    _state = GameState.Store
+                End If
+            Case Keys.C
+                If _state = GameState.Menu Then
+                    _state = GameState.Credits
+                End If
+            Case Keys.F12
+                If _state = GameState.Menu Then
+                    ExportMarketingAssets()
+                End If
+            Case Keys.Escape
+                If _state = GameState.Credits Then
+                    _state = GameState.Menu
+                End If
         End Select
     End Sub
 
@@ -506,6 +674,24 @@ Public Class Form1
         Dim mx = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
         Dim my = CSng(e.Y) * LOGICAL_HEIGHT / ClientSize.Height
         ' Touch/click to start, resume, or advance level
+        If _state = GameState.NameEntry Then
+            ' Clicking a returning-player name fills the input box
+            Dim existing2 = GetExistingPlayerNames()
+            If existing2.Count > 0 Then
+                Dim ph2 = 420
+                Dim py2 = CSng((LOGICAL_HEIGHT - ph2) / 2)
+                Dim ry = py2 + 278.0F
+                For Each nm In existing2.Take(5)
+                    If my >= ry AndAlso my < ry + 22 Then
+                        _nameEntryInput = nm
+                        Return
+                    End If
+                    ry += 24
+                Next
+            End If
+            Return
+        End If
+        ' Touch/click to start, resume, or advance level
         If _state = GameState.Menu Then
             StartNewGame()
             Return
@@ -527,6 +713,74 @@ Public Class Form1
             SpawnParticles(LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2, Color.FromArgb(255, 200, 50), 6)
             Return
         End If
+        If _state = GameState.GameOver Then
+            Dim goPw = 480, goPh = 360
+            Dim goPx = CSng((LOGICAL_WIDTH - goPw) / 2), goPy = CSng((LOGICAL_HEIGHT - goPh) / 2)
+            Dim goBtnW = 120, goBtnH = 36, goGap = 18
+            Dim goTotalW = goBtnW * 3 + goGap * 2
+            Dim goBx = goPx + (goPw - goTotalW) / 2
+            Dim goBy = goPy + 30 + 50 + 36 + 36 + 46
+            ' Retry
+            If mx >= goBx AndAlso mx < goBx + goBtnW AndAlso my >= goBy AndAlso my < goBy + goBtnH Then
+                _highScoreDelayFrames = 0 : _pendingHighScore = False
+                StartNewGame()
+                Return
+            End If
+            ' Store
+            Dim goSx = goBx + goBtnW + goGap
+            If mx >= goSx AndAlso mx < goSx + goBtnW AndAlso my >= goBy AndAlso my < goBy + goBtnH Then
+                _highScoreDelayFrames = 0 : _pendingHighScore = False
+                _storeCategory = StoreCategory.Balls : _storeSelectedIndex = 0
+                _state = GameState.Store
+                Return
+            End If
+            ' Menu
+            Dim goMx = goBx + (goBtnW + goGap) * 2
+            If mx >= goMx AndAlso mx < goMx + goBtnW AndAlso my >= goBy AndAlso my < goBy + goBtnH Then
+                _highScoreDelayFrames = 0 : _pendingHighScore = False
+                _state = GameState.Menu
+                Return
+            End If
+            Return
+        End If
+        If _state = GameState.Store Then
+            ' Handled by DrawStore click detection is keyboard-first;
+            ' mouse click on item row selects and activates it
+            Dim pw2 = 760, ph2 = 560
+            Dim px2 = CSng((LOGICAL_WIDTH - pw2) / 2)
+            Dim py2 = CSng((LOGICAL_HEIGHT - ph2) / 2)
+            ' Category tabs (y ~ py2+50)
+            Dim tabY = py2 + 50
+            Dim tab0X = px2 + 30, tabW3 = 200
+            If my >= tabY AndAlso my < tabY + 32 Then
+                If mx >= tab0X AndAlso mx < tab0X + tabW3 Then
+                    _storeCategory = StoreCategory.Balls : _storeSelectedIndex = 0
+                ElseIf mx >= tab0X + tabW3 + 10 AndAlso mx < tab0X + tabW3 * 2 + 10 Then
+                    _storeCategory = StoreCategory.Bricks : _storeSelectedIndex = 0
+                ElseIf mx >= tab0X + tabW3 * 2 + 20 AndAlso mx < tab0X + tabW3 * 3 + 20 Then
+                    _storeCategory = StoreCategory.Bonuses : _storeSelectedIndex = 0
+                End If
+                Return
+            End If
+            ' Item rows
+            Dim catItems2 = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+            Dim rowY = py2 + 100.0F
+            For i = 0 To catItems2.Count - 1
+                If my >= rowY AndAlso my < rowY + 58 Then
+                    _storeSelectedIndex = i
+                    Dim sel2 = catItems2(i)
+                    If IsOwned(sel2.Category, sel2.Id) Then
+                        EquipItem(sel2)
+                    Else
+                        PurchaseItem(sel2)
+                    End If
+                    Return
+                End If
+                rowY += 62
+            Next
+            Return
+        End If
+
         If _state <> GameState.Options Then Return
         Dim pw = 780, ph = 600
         Dim px = CSng((LOGICAL_WIDTH - pw) / 2)
@@ -593,6 +847,8 @@ Public Class Form1
         DrawStarField(g)
 
         Select Case _state
+            Case GameState.NameEntry
+                DrawNameEntry(g)
             Case GameState.Menu
                 DrawMenu(g)
             Case GameState.Playing, GameState.Paused
@@ -601,11 +857,18 @@ Public Class Form1
             Case GameState.LevelComplete
                 DrawGame(g)
                 DrawOverlay(g, $"LEVEL {_level} COMPLETE!", "Press SPACE for next level", True)
+            Case GameState.GameOver
+                DrawGame(g)
+                DrawGameOverScreen(g)
             Case GameState.Options
                 If _previousState = GameState.Playing OrElse _previousState = GameState.Paused Then DrawGame(g)
                 DrawOptions(g)
             Case GameState.HighScore
                 DrawHighScore(g)
+            Case GameState.Store
+                DrawStore(g)
+            Case GameState.Credits
+                DrawCredits(g)
         End Select
     End Sub
 #End Region
@@ -652,9 +915,11 @@ Public Class Form1
         _nameInput = ""
         _highScoreSaved = False
         _getReadyFrames = 0
+        _proceduralSeed = Environment.TickCount  ' fresh seed → new procedural palette every game
         SetupLevel()
         _state = GameState.Playing
         PlaySFX(_sfxData(_sfxStyle)(10), 100)
+        LogEvent("GameStarted", $"player={_playerName} level={_level}")
     End Sub
 
     Private Sub NextLevel()
@@ -669,7 +934,173 @@ Public Class Form1
         SetupLevel()
         _state = GameState.Playing
         PlaySFX(_sfxData(_sfxStyle)(10), 100)
+        LogEvent("LevelStarted", $"player={_playerName} level={_level}")
     End Sub
+
+    ' Generates a 7-row palette
+    ' Store cosmetic palettes are separate and intentionally override this.
+    Private Function GenerateProceduralBrickPalette() As Color()()
+        Dim rnd As New Random(_proceduralSeed)
+        Dim pal(6)() As Color
+        For r = 0 To 6
+            Dim h1 = rnd.Next(0, 360)
+            Dim h2 = (h1 + rnd.Next(20, 60)) Mod 360
+            pal(r) = New Color() {ColorFromHSV(h1, 0.65 + rnd.NextDouble() * 0.2, 0.9 + rnd.NextDouble() * 0.1),
+                                   ColorFromHSV(h2, 0.5 + rnd.NextDouble() * 0.2, 1.0)}
+        Next
+        Return pal
+    End Function
+
+    Private Function GetBrickPalette() As Color()()
+        Select Case _activeBrickPalette
+            Case "neon"
+                Return {
+                    New Color() {Color.FromArgb(255, 0, 220), Color.FromArgb(255, 80, 240)},
+                    New Color() {Color.FromArgb(0, 220, 255), Color.FromArgb(80, 240, 255)},
+                    New Color() {Color.FromArgb(0, 255, 80), Color.FromArgb(80, 255, 160)},
+                    New Color() {Color.FromArgb(255, 255, 0), Color.FromArgb(255, 255, 100)},
+                    New Color() {Color.FromArgb(255, 80, 0), Color.FromArgb(255, 160, 80)},
+                    New Color() {Color.FromArgb(80, 0, 255), Color.FromArgb(160, 80, 255)},
+                    New Color() {Color.FromArgb(0, 255, 255), Color.FromArgb(80, 255, 255)}}
+            Case "pastel"
+                Return {
+                    New Color() {Color.FromArgb(255, 182, 193), Color.FromArgb(255, 210, 218)},
+                    New Color() {Color.FromArgb(255, 218, 185), Color.FromArgb(255, 235, 210)},
+                    New Color() {Color.FromArgb(255, 255, 180), Color.FromArgb(255, 255, 210)},
+                    New Color() {Color.FromArgb(180, 255, 200), Color.FromArgb(210, 255, 220)},
+                    New Color() {Color.FromArgb(180, 220, 255), Color.FromArgb(210, 235, 255)},
+                    New Color() {Color.FromArgb(210, 190, 255), Color.FromArgb(230, 215, 255)},
+                    New Color() {Color.FromArgb(255, 190, 240), Color.FromArgb(255, 215, 248)}}
+            Case "metal"
+                Return {
+                    New Color() {Color.FromArgb(180, 180, 195), Color.FromArgb(220, 220, 235)},
+                    New Color() {Color.FromArgb(160, 170, 185), Color.FromArgb(200, 210, 225)},
+                    New Color() {Color.FromArgb(140, 155, 170), Color.FromArgb(180, 195, 210)},
+                    New Color() {Color.FromArgb(120, 135, 155), Color.FromArgb(160, 175, 195)},
+                    New Color() {Color.FromArgb(100, 115, 135), Color.FromArgb(140, 155, 175)},
+                    New Color() {Color.FromArgb(80,  100, 120), Color.FromArgb(120, 140, 160)},
+                    New Color() {Color.FromArgb(60,  80,  100), Color.FromArgb(100, 120, 140)}}
+            Case "candy"
+                Return {
+                    New Color() {Color.FromArgb(255, 100, 150), Color.FromArgb(255, 160, 190)},
+                    New Color() {Color.FromArgb(255, 160, 80), Color.FromArgb(255, 200, 140)},
+                    New Color() {Color.FromArgb(255, 240, 80), Color.FromArgb(255, 250, 160)},
+                    New Color() {Color.FromArgb(80, 240, 160), Color.FromArgb(160, 255, 200)},
+                    New Color() {Color.FromArgb(80, 180, 255), Color.FromArgb(160, 220, 255)},
+                    New Color() {Color.FromArgb(200, 100, 255), Color.FromArgb(230, 160, 255)},
+                    New Color() {Color.FromArgb(255, 100, 220), Color.FromArgb(255, 160, 240)}}
+            Case "space"
+                Return {
+                    New Color() {Color.FromArgb(20, 20, 80), Color.FromArgb(50, 50, 140)},
+                    New Color() {Color.FromArgb(10, 40, 80), Color.FromArgb(30, 80, 160)},
+                    New Color() {Color.FromArgb(20, 60, 60), Color.FromArgb(40, 120, 120)},
+                    New Color() {Color.FromArgb(40, 20, 80), Color.FromArgb(80, 40, 160)},
+                    New Color() {Color.FromArgb(60, 10, 60), Color.FromArgb(120, 20, 120)},
+                    New Color() {Color.FromArgb(80, 30, 20), Color.FromArgb(160, 60, 40)},
+                    New Color() {Color.FromArgb(10, 10, 50), Color.FromArgb(30, 30, 100)}}
+            Case "lava"
+                Return {
+                    New Color() {Color.FromArgb(255, 60, 0), Color.FromArgb(255, 120, 40)},
+                    New Color() {Color.FromArgb(220, 40, 0), Color.FromArgb(255, 90, 20)},
+                    New Color() {Color.FromArgb(200, 80, 0), Color.FromArgb(240, 130, 40)},
+                    New Color() {Color.FromArgb(180, 30, 0), Color.FromArgb(220, 70, 10)},
+                    New Color() {Color.FromArgb(160, 20, 0), Color.FromArgb(200, 50, 0)},
+                    New Color() {Color.FromArgb(120, 10, 0), Color.FromArgb(180, 40, 0)},
+                    New Color() {Color.FromArgb(255, 100, 20), Color.FromArgb(255, 160, 60)}}
+            Case "ice"
+                Return {
+                    New Color() {Color.FromArgb(180, 230, 255), Color.FromArgb(220, 245, 255)},
+                    New Color() {Color.FromArgb(140, 210, 255), Color.FromArgb(190, 235, 255)},
+                    New Color() {Color.FromArgb(100, 190, 240), Color.FromArgb(160, 220, 250)},
+                    New Color() {Color.FromArgb(80, 170, 225), Color.FromArgb(140, 205, 245)},
+                    New Color() {Color.FromArgb(60, 150, 210), Color.FromArgb(120, 190, 235)},
+                    New Color() {Color.FromArgb(40, 130, 200), Color.FromArgb(100, 175, 225)},
+                    New Color() {Color.FromArgb(200, 240, 255), Color.FromArgb(230, 250, 255)}}
+            Case "toxic"
+                Return {
+                    New Color() {Color.FromArgb(80, 255, 0), Color.FromArgb(160, 255, 60)},
+                    New Color() {Color.FromArgb(60, 220, 0), Color.FromArgb(130, 240, 40)},
+                    New Color() {Color.FromArgb(100, 200, 20), Color.FromArgb(170, 230, 80)},
+                    New Color() {Color.FromArgb(40, 180, 0), Color.FromArgb(100, 210, 40)},
+                    New Color() {Color.FromArgb(20, 160, 0), Color.FromArgb(80, 190, 20)},
+                    New Color() {Color.FromArgb(0, 140, 20), Color.FromArgb(60, 170, 60)},
+                    New Color() {Color.FromArgb(120, 255, 40), Color.FromArgb(200, 255, 100)}}
+            Case "sunset"
+                Return {
+                    New Color() {Color.FromArgb(255, 80, 20), Color.FromArgb(255, 140, 60)},
+                    New Color() {Color.FromArgb(255, 120, 40), Color.FromArgb(255, 180, 90)},
+                    New Color() {Color.FromArgb(255, 160, 60), Color.FromArgb(255, 210, 120)},
+                    New Color() {Color.FromArgb(255, 200, 80), Color.FromArgb(255, 230, 150)},
+                    New Color() {Color.FromArgb(240, 100, 80), Color.FromArgb(255, 160, 120)},
+                    New Color() {Color.FromArgb(220, 60, 100), Color.FromArgb(255, 120, 150)},
+                    New Color() {Color.FromArgb(180, 40, 120), Color.FromArgb(230, 100, 170)}}
+            Case "forest"
+                Return {
+                    New Color() {Color.FromArgb(20, 100, 20), Color.FromArgb(60, 150, 40)},
+                    New Color() {Color.FromArgb(40, 120, 30), Color.FromArgb(80, 170, 60)},
+                    New Color() {Color.FromArgb(60, 140, 40), Color.FromArgb(100, 190, 70)},
+                    New Color() {Color.FromArgb(80, 110, 20), Color.FromArgb(130, 160, 50)},
+                    New Color() {Color.FromArgb(100, 80, 10), Color.FromArgb(160, 130, 40)},
+                    New Color() {Color.FromArgb(60, 160, 60), Color.FromArgb(110, 210, 90)},
+                    New Color() {Color.FromArgb(30, 80, 10), Color.FromArgb(70, 130, 30)}}
+            Case "ocean"
+                Return {
+                    New Color() {Color.FromArgb(0, 120, 180), Color.FromArgb(40, 170, 220)},
+                    New Color() {Color.FromArgb(0, 100, 160), Color.FromArgb(20, 150, 200)},
+                    New Color() {Color.FromArgb(0, 140, 160), Color.FromArgb(40, 190, 200)},
+                    New Color() {Color.FromArgb(20, 80, 140), Color.FromArgb(60, 130, 190)},
+                    New Color() {Color.FromArgb(0, 160, 180), Color.FromArgb(40, 210, 220)},
+                    New Color() {Color.FromArgb(10, 60, 120), Color.FromArgb(40, 110, 170)},
+                    New Color() {Color.FromArgb(0, 180, 200), Color.FromArgb(60, 220, 235)}}
+            Case "galaxy"
+                Return {
+                    New Color() {Color.FromArgb(120, 0, 180), Color.FromArgb(180, 60, 230)},
+                    New Color() {Color.FromArgb(80, 0, 160), Color.FromArgb(140, 40, 210)},
+                    New Color() {Color.FromArgb(160, 20, 200), Color.FromArgb(210, 80, 240)},
+                    New Color() {Color.FromArgb(60, 0, 140), Color.FromArgb(120, 20, 200)},
+                    New Color() {Color.FromArgb(200, 60, 220), Color.FromArgb(240, 120, 255)},
+                    New Color() {Color.FromArgb(100, 20, 160), Color.FromArgb(160, 60, 220)},
+                    New Color() {Color.FromArgb(40, 0, 120), Color.FromArgb(100, 0, 180)}}
+            Case "gold"
+                Return {
+                    New Color() {Color.FromArgb(255, 200, 0), Color.FromArgb(255, 235, 80)},
+                    New Color() {Color.FromArgb(230, 170, 0), Color.FromArgb(255, 210, 60)},
+                    New Color() {Color.FromArgb(200, 140, 0), Color.FromArgb(240, 185, 40)},
+                    New Color() {Color.FromArgb(255, 215, 40), Color.FromArgb(255, 245, 120)},
+                    New Color() {Color.FromArgb(180, 120, 0), Color.FromArgb(220, 165, 20)},
+                    New Color() {Color.FromArgb(160, 100, 0), Color.FromArgb(200, 145, 20)},
+                    New Color() {Color.FromArgb(255, 230, 80), Color.FromArgb(255, 250, 160)}}
+            Case "obsidian"
+                Return {
+                    New Color() {Color.FromArgb(30, 25, 40), Color.FromArgb(60, 50, 75)},
+                    New Color() {Color.FromArgb(20, 15, 30), Color.FromArgb(50, 40, 65)},
+                    New Color() {Color.FromArgb(40, 30, 55), Color.FromArgb(70, 60, 90)},
+                    New Color() {Color.FromArgb(15, 10, 25), Color.FromArgb(45, 35, 60)},
+                    New Color() {Color.FromArgb(50, 40, 65), Color.FromArgb(80, 70, 100)},
+                    New Color() {Color.FromArgb(10, 8, 18), Color.FromArgb(35, 28, 50)},
+                    New Color() {Color.FromArgb(60, 50, 80), Color.FromArgb(90, 80, 115)}}
+            Case "sakura"
+                Return {
+                    New Color() {Color.FromArgb(255, 182, 200), Color.FromArgb(255, 215, 228)},
+                    New Color() {Color.FromArgb(255, 160, 185), Color.FromArgb(255, 200, 218)},
+                    New Color() {Color.FromArgb(240, 140, 170), Color.FromArgb(255, 185, 210)},
+                    New Color() {Color.FromArgb(255, 200, 215), Color.FromArgb(255, 225, 235)},
+                    New Color() {Color.FromArgb(220, 120, 155), Color.FromArgb(250, 170, 195)},
+                    New Color() {Color.FromArgb(200, 100, 140), Color.FromArgb(235, 155, 185)},
+                    New Color() {Color.FromArgb(255, 210, 225), Color.FromArgb(255, 235, 245)}}
+            Case "aurora"
+                Return {
+                    New Color() {Color.FromArgb(0, 200, 160), Color.FromArgb(60, 240, 200)},
+                    New Color() {Color.FromArgb(0, 160, 200), Color.FromArgb(40, 210, 240)},
+                    New Color() {Color.FromArgb(80, 0, 200), Color.FromArgb(140, 60, 240)},
+                    New Color() {Color.FromArgb(0, 220, 120), Color.FromArgb(60, 255, 170)},
+                    New Color() {Color.FromArgb(120, 0, 200), Color.FromArgb(180, 60, 240)},
+                    New Color() {Color.FromArgb(0, 180, 240), Color.FromArgb(60, 220, 255)},
+                    New Color() {Color.FromArgb(40, 240, 180), Color.FromArgb(100, 255, 220)}}
+            Case Else ' base / classic — procedurally generated from the current game seed
+                Return GenerateProceduralBrickPalette()
+        End Select
+    End Function
 
     Private Sub SetupLevel()
         _paddleX = (LOGICAL_WIDTH - _paddleWidth) / 2.0F
@@ -699,7 +1130,8 @@ Public Class Form1
             brickH = Math.Max(brickH, 28)
         End If
 
-        Dim palette = If(_colorblindMode, _colorblindColors, _rowColors)
+        Dim basePalette = GetBrickPalette()
+        Dim palette = If(_colorblindMode, _colorblindColors, basePalette)
         _bricks.Clear()
 
         Dim pattern = (_level - 1) Mod 8
@@ -1688,6 +2120,10 @@ Public Class Form1
                         bk.Alive = False
                         _combo += 1 : _comboTimer = 90
                         _score += bk.Points * Math.Min(_combo, 8)
+                        ' Earn coins: 1 per brick + 1 extra per active combo level
+                        Dim coinsEarned = COIN_PER_BRICK + Math.Max(0, Math.Min(_combo, 8) - 1)
+                        _coinBalance += coinsEarned
+                        _coinsEarnedThisSession += coinsEarned
                         SpawnParticles(bk.Rect.X + bk.Rect.Width / 2, bk.Rect.Y + bk.Rect.Height / 2, bk.Color1, PARTICLE_COUNT)
                         If _combo >= 2 Then PlayComboSound() Else PlayBrickHit()
                         _screenShake = 3
@@ -1717,11 +2153,13 @@ Public Class Form1
             _screenShake = 10
             If _lives <= 0 Then
                 If _score > _highScore Then _highScore = _score
+                SaveStore()
+                LogEvent("GameOver", $"player={_playerName} score={_score} level={_level}")
                 _nameInput = ""
                 _highScoreSaved = False
                 _pendingHighScore = True
-                _highScoreDelayFrames = 60
-                _state = GameState.Paused
+                _highScoreDelayFrames = 90
+                _state = GameState.GameOver
             Else
                 ResetBall()
             End If
@@ -1795,6 +2233,10 @@ Public Class Form1
 
     Private Sub CheckLevelComplete()
         If _bricks.All(Function(bk) Not bk.Alive) Then
+            _coinBalance += COIN_LEVEL_BONUS
+            _coinsEarnedThisSession += COIN_LEVEL_BONUS
+            LogEvent("LevelComplete", $"player={_playerName} level={_level} score={_score}")
+            SaveStore()
             _state = GameState.LevelComplete
             PlayLevelWin()
         End If
@@ -1831,33 +2273,40 @@ Public Class Form1
         Select Case t
             Case 0
                 pu.PType = PowerUpType.BlueBallGrow
-                pu.Color1 = If(_colorblindMode, Color.FromArgb(0, 114, 178), Color.FromArgb(50, 120, 255))
                 pu.Symbol = If(_colorblindMode, "BIG", "+")
             Case 1
                 pu.PType = PowerUpType.RedBallShrink
-                pu.Color1 = If(_colorblindMode, Color.FromArgb(213, 94, 0), Color.FromArgb(255, 60, 60))
                 pu.Symbol = If(_colorblindMode, "1UP", ChrW(&H2665))
             Case 2, 3, 4
                 pu.PType = PowerUpType.GreenMultiBall
-                pu.Color1 = If(_colorblindMode, Color.FromArgb(240, 228, 66), Color.FromArgb(50, 220, 100))
-                pu.Symbol = If(_colorblindMode, "x3", "x3")
+                pu.Symbol = "x3"
             Case 5
                 pu.PType = PowerUpType.YellowBallShrink
-                pu.Color1 = If(_colorblindMode, Color.FromArgb(86, 180, 233), Color.FromArgb(255, 220, 50))
                 pu.Symbol = If(_colorblindMode, "SML", "-")
             Case 6
                 pu.PType = PowerUpType.PurplePaddleMega
-                pu.Color1 = If(_colorblindMode, Color.FromArgb(148, 0, 211), Color.FromArgb(170, 80, 255))
-                pu.Symbol = If(_colorblindMode, "BIG", "x3")
+                pu.Symbol = If(_colorblindMode, "PAD", "x3")
             Case 7
                 pu.PType = PowerUpType.OrangeBallSlow
-                pu.Color1 = If(_colorblindMode, Color.FromArgb(230, 159, 0), Color.FromArgb(255, 150, 60))
-                pu.Symbol = If(_colorblindMode, "SLOW", "-")
+                pu.Symbol = If(_colorblindMode, "SLW", "-")
             Case Else
                 pu.PType = PowerUpType.PinkBallFast
-                pu.Color1 = If(_colorblindMode, Color.FromArgb(204, 121, 167), Color.FromArgb(255, 120, 200))
-                pu.Symbol = If(_colorblindMode, "FAST", "+")
+                pu.Symbol = If(_colorblindMode, "FST", "+")
         End Select
+        ' Colorblind mode overrides pack color for accessibility
+        If _colorblindMode Then
+            Select Case pu.PType
+                Case PowerUpType.BlueBallGrow    : pu.Color1 = Color.FromArgb(0, 114, 178)
+                Case PowerUpType.RedBallShrink   : pu.Color1 = Color.FromArgb(213, 94, 0)
+                Case PowerUpType.GreenMultiBall  : pu.Color1 = Color.FromArgb(240, 228, 66)
+                Case PowerUpType.YellowBallShrink: pu.Color1 = Color.FromArgb(86, 180, 233)
+                Case PowerUpType.PurplePaddleMega: pu.Color1 = Color.FromArgb(148, 0, 211)
+                Case PowerUpType.OrangeBallSlow  : pu.Color1 = Color.FromArgb(230, 159, 0)
+                Case Else                        : pu.Color1 = Color.FromArgb(204, 121, 167)
+            End Select
+        Else
+            pu.Color1 = GetBonusPackColor(pu.PType)
+        End If
         _powerUps.Add(pu)
     End Sub
 
@@ -1968,6 +2417,290 @@ Public Class Form1
         Catch
         End Try
     End Sub
+
+    ' ── Per-player profile helpers ────────────────────────────────────────────
+
+    Private Sub SetPlayerProfile(name As String)
+        _playerName = name.Trim()
+        ' Dev mode: password grants unlimited store coins
+        _devMode = String.Equals(_playerName, "luffyisking", StringComparison.OrdinalIgnoreCase)
+        Dim safeName = String.Join("_", _playerName.Split(Path.GetInvalidFileNameChars()))
+        _storeSavePath = Path.Combine(_playersDir, safeName & ".json")
+        ' Reset economy state before loading so values don't bleed between profiles
+        _coinBalance = 0
+        _coinsEarnedThisSession = 0
+        _activeBallSkin = "base"
+        _activeBrickPalette = "base"
+        _activeBonusPack = "base"
+        _ownedItems.Clear()
+        InitStoreItems()   ' re-seeds base items as owned
+        LoadStore()
+        If _devMode Then _coinBalance = 999999
+    End Sub
+
+    Private Function GetExistingPlayerNames() As List(Of String)
+        Dim names As New List(Of String)
+        Try
+            If Not Directory.Exists(_playersDir) Then Return names
+            For Each f In Directory.GetFiles(_playersDir, "*.json")
+                Try
+                    Dim json = File.ReadAllText(f)
+                    Dim data = JsonSerializer.Deserialize(Of StoreSaveData)(json)
+                    If data IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(data.PlayerName) Then
+                        names.Add(data.PlayerName)
+                    Else
+                        names.Add(Path.GetFileNameWithoutExtension(f))
+                    End If
+                Catch
+                    names.Add(Path.GetFileNameWithoutExtension(f))
+                End Try
+            Next
+        Catch
+        End Try
+        Return names
+    End Function
+
+    ' ── Store / Economy persistence ───────────────────────────────────────────
+
+    Private Sub InitStoreItems()
+        _storeItems.Clear()
+
+        ' ── Balls ──────────────────────────────────────────────────────────────
+        _storeItems.Add(New StoreItem With {
+            .Id = "base", .Name = "Classic Ball", .Description = "The original white ball.",
+            .Price = 0, .Category = StoreCategory.Balls, .IsBase = True})
+        _storeItems.Add(New StoreItem With {
+            .Id = "fire", .Name = "Fire Ball", .Description = "Blazing orange trail.",
+            .Price = 150, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "ice", .Name = "Ice Ball", .Description = "Frosty cyan glow.",
+            .Price = 150, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "plasma", .Name = "Plasma Ball", .Description = "Electric violet pulse.",
+            .Price = 250, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "gold", .Name = "Gold Ball", .Description = "Shining gold sphere.",
+            .Price = 400, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "rainbow", .Name = "Rainbow Ball", .Description = "Cycles through all colors.",
+            .Price = 600, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "lava", .Name = "Lava Ball", .Description = "Scorching red-orange magma.",
+            .Price = 200, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "void", .Name = "Void Ball", .Description = "Dark matter core.",
+            .Price = 300, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "toxic", .Name = "Toxic Ball", .Description = "Radioactive green slime.",
+            .Price = 200, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "neon", .Name = "Neon Ball", .Description = "Blinding electric cyan.",
+            .Price = 250, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "crystal", .Name = "Crystal Ball", .Description = "Clear prismatic glass.",
+            .Price = 350, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "shadow", .Name = "Shadow Ball", .Description = "Deep purple darkness.",
+            .Price = 300, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "sakura", .Name = "Sakura Ball", .Description = "Soft cherry-blossom pink.",
+            .Price = 250, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "copper", .Name = "Copper Ball", .Description = "Warm oxidised metal.",
+            .Price = 350, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "ocean", .Name = "Ocean Ball", .Description = "Deep sea teal shimmer.",
+            .Price = 250, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "star", .Name = "Star Ball", .Description = "Stellar white-gold burst.",
+            .Price = 500, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "obsidian", .Name = "Obsidian Ball", .Description = "Volcanic black glass.",
+            .Price = 450, .Category = StoreCategory.Balls, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "aurora", .Name = "Aurora Ball", .Description = "Northern-lights gradient.",
+            .Price = 700, .Category = StoreCategory.Balls, .IsBase = False})
+
+        ' ── Brick Palettes ─────────────────────────────────────────────────────
+        _storeItems.Add(New StoreItem With {
+            .Id = "base", .Name = "Classic Bricks", .Description = "Default rainbow palette.",
+            .Price = 0, .Category = StoreCategory.Bricks, .IsBase = True})
+        _storeItems.Add(New StoreItem With {
+            .Id = "neon", .Name = "Neon Bricks", .Description = "Bright neon grid.",
+            .Price = 200, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "pastel", .Name = "Pastel Bricks", .Description = "Soft pastel tones.",
+            .Price = 200, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "metal", .Name = "Metal Bricks", .Description = "Sleek steel panels.",
+            .Price = 350, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "candy", .Name = "Candy Bricks", .Description = "Sweet candy-coated blocks.",
+            .Price = 350, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "space", .Name = "Space Bricks", .Description = "Deep-space dark theme.",
+            .Price = 500, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "lava", .Name = "Lava Bricks", .Description = "Molten red-orange heat.",
+            .Price = 250, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "ice", .Name = "Ice Bricks", .Description = "Frozen arctic blue tones.",
+            .Price = 250, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "toxic", .Name = "Toxic Bricks", .Description = "Radioactive green glow.",
+            .Price = 300, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "sunset", .Name = "Sunset Bricks", .Description = "Warm orange-pink horizon.",
+            .Price = 300, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "forest", .Name = "Forest Bricks", .Description = "Deep earthy greens.",
+            .Price = 300, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "ocean", .Name = "Ocean Bricks", .Description = "Blue-teal sea shades.",
+            .Price = 300, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "galaxy", .Name = "Galaxy Bricks", .Description = "Violet-pink nebula palette.",
+            .Price = 450, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "gold", .Name = "Gold Bricks", .Description = "Shining amber treasure.",
+            .Price = 450, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "obsidian", .Name = "Obsidian Bricks", .Description = "Black volcanic stone.",
+            .Price = 500, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "sakura", .Name = "Sakura Bricks", .Description = "Japanese cherry-blossom.",
+            .Price = 350, .Category = StoreCategory.Bricks, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "aurora", .Name = "Aurora Bricks", .Description = "Northern-lights shimmer.",
+            .Price = 600, .Category = StoreCategory.Bricks, .IsBase = False})
+
+        ' ── Bonus Packs ────────────────────────────────────────────────────────
+        ' Each pack re-themes every power-up drop: colors, shapes, and icon symbols.
+        _storeItems.Add(New StoreItem With {
+            .Id = "base", .Name = "Classic Bonuses", .Description = "Original rainbow power-ups.",
+            .Price = 0, .Category = StoreCategory.Bonuses, .IsBase = True})
+        _storeItems.Add(New StoreItem With {
+            .Id = "ninja", .Name = "Ninja Pack", .Description = "Shuriken, smoke bombs & katana flashes.",
+            .Price = 200, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "space", .Name = "Space Odyssey Pack", .Description = "Planets, rockets & black holes.",
+            .Price = 300, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "candy", .Name = "Candy Land Pack", .Description = "Lollipops, gummies & jellybean bursts.",
+            .Price = 200, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "cyber", .Name = "Cyberpunk Pack", .Description = "Circuit nodes, data streams & neon glitch.",
+            .Price = 400, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "medieval", .Name = "Medieval Pack", .Description = "Swords, shields, potions & crowns.",
+            .Price = 350, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "ocean", .Name = "Ocean Deep Pack", .Description = "Bubbles, fish, anchors & waves.",
+            .Price = 250, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "retro", .Name = "Retro Arcade Pack", .Description = "8-bit stars, coins & power pills.",
+            .Price = 300, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "magic", .Name = "Wizard Magic Pack", .Description = "Wands, stars, runes & spell orbs.",
+            .Price = 450, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "dragon", .Name = "Dragon Fire Pack", .Description = "Claws, flames, scales & dragon eggs.",
+            .Price = 500, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "sakura", .Name = "Sakura Spring Pack", .Description = "Petals, lanterns, fans & blossom rings.",
+            .Price = 350, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "robot", .Name = "Robot Wars Pack", .Description = "Gears, bolts, laser eyes & CPU chips.",
+            .Price = 400, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "pirate", .Name = "Pirate Seas Pack", .Description = "Skulls, treasure chests, cannons & hooks.",
+            .Price = 300, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "galaxy", .Name = "Galaxy Core Pack", .Description = "Supernovas, comets, wormholes & nebulae.",
+            .Price = 600, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "festival", .Name = "Festival Pack", .Description = "Fireworks, confetti, lanterns & party stars.",
+            .Price = 250, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "horror", .Name = "Halloween Horror Pack", .Description = "Skulls, bats, pumpkins & ghost trails.",
+            .Price = 350, .Category = StoreCategory.Bonuses, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "golden", .Name = "Golden Age Pack", .Description = "Coins, laurels, crowns & golden rings.",
+            .Price = 700, .Category = StoreCategory.Bonuses, .IsBase = False})
+
+        ' Base items are always owned
+        For Each item In _storeItems
+            If item.IsBase Then _ownedItems.Add(item.Category.ToString() & "_" & item.Id)
+        Next
+    End Sub
+
+    Private Sub LoadStore()
+        Try
+            If Not File.Exists(_storeSavePath) Then Return
+            Dim json = File.ReadAllText(_storeSavePath)
+            Dim data = JsonSerializer.Deserialize(Of StoreSaveData)(json)
+            If data Is Nothing Then Return
+            _coinBalance = data.CoinBalance
+            If data.OwnedItems IsNot Nothing Then
+                For Each key In data.OwnedItems
+                    _ownedItems.Add(key)
+                Next
+            End If
+            If Not String.IsNullOrWhiteSpace(data.ActiveBallSkin) Then _activeBallSkin = data.ActiveBallSkin
+            If Not String.IsNullOrWhiteSpace(data.ActiveBrickPalette) Then _activeBrickPalette = data.ActiveBrickPalette
+            If Not String.IsNullOrWhiteSpace(data.ActiveBonusPack) Then _activeBonusPack = data.ActiveBonusPack
+        Catch
+        End Try
+    End Sub
+
+    Private Sub SaveStore()
+        Try
+            Dim dir = Path.GetDirectoryName(_storeSavePath)
+            If Not String.IsNullOrEmpty(dir) AndAlso Not Directory.Exists(dir) Then
+                Directory.CreateDirectory(dir)
+            End If
+            Dim data As New StoreSaveData With {
+                .PlayerName = _playerName,
+                .CoinBalance = _coinBalance,
+                .OwnedItems = _ownedItems.ToList(),
+                .ActiveBallSkin = _activeBallSkin,
+                .ActiveBrickPalette = _activeBrickPalette,
+                .ActiveBonusPack = _activeBonusPack
+            }
+            File.WriteAllText(_storeSavePath, JsonSerializer.Serialize(data))
+            LogEvent("ProfileSaved", $"player={_playerName} coins={_coinBalance}")
+            SyncProfileAsync()
+        Catch
+        End Try
+    End Sub
+
+    Private Function IsOwned(category As StoreCategory, id As String) As Boolean
+        Return _ownedItems.Contains(category.ToString() & "_" & id)
+    End Function
+
+    Private Sub PurchaseItem(item As StoreItem)
+        Dim key = item.Category.ToString() & "_" & item.Id
+        If IsOwned(item.Category, item.Id) Then Return
+        If Not _devMode AndAlso _coinBalance < item.Price Then Return
+        If Not _devMode Then _coinBalance -= item.Price
+        _ownedItems.Add(key)
+        LogEvent("ItemPurchased", $"player={_playerName} item={key} cost={item.Price}")
+        SaveStore()
+    End Sub
+
+    Private Sub EquipItem(item As StoreItem)
+        If Not IsOwned(item.Category, item.Id) Then Return
+        Select Case item.Category
+            Case StoreCategory.Balls
+                _activeBallSkin = item.Id
+            Case StoreCategory.Bricks
+                _activeBrickPalette = item.Id
+            Case StoreCategory.Bonuses
+                _activeBonusPack = item.Id
+        End Select
+        LogEvent("ItemEquipped", $"player={_playerName} item={item.Category}_{item.Id}")
+        SaveStore()
+    End Sub
 #End Region
 
 #Region "Drawing"
@@ -1984,6 +2717,58 @@ Public Class Form1
                 g.FillEllipse(br, _starFieldX(i), _starFieldY(i), 2, 2)
             End Using
         Next
+    End Sub
+
+    Private Sub DrawNameEntry(g As Graphics)
+        Dim pw = 560, ph = 420
+        Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+        Using br As New SolidBrush(Color.FromArgb(245, 12, 12, 35))
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(120, 100, 180, 255), 2)
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+
+        DrawCenteredText(g, "BRICK BLAST", _fnt30b, Color.FromArgb(255, 200, 80), py + 20)
+        DrawCenteredText(g, "Enter your player name", _fnt16r, Color.FromArgb(180, 200, 255), py + 90)
+
+        ' Input box
+        Dim boxW = 340, boxH = 48
+        Dim bx = CSng((LOGICAL_WIDTH - boxW) / 2), bby = py + 145
+        Using br As New SolidBrush(Color.FromArgb(60, 255, 255, 255))
+            Using rr = RoundedRect(New RectangleF(bx, bby, boxW, boxH), 8)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(180, 100, 180, 255), 2)
+            Using rr = RoundedRect(New RectangleF(bx, bby, boxW, boxH), 8)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+        Dim cursor = If(_frameCount Mod 60 < 30, "|", " ")
+        Dim inputDisplay = If(_nameEntryInput.Length > 0, _nameEntryInput, "")
+        DrawCenteredText(g, inputDisplay & cursor, _fnt18b, Color.White, bby + 8)
+
+        DrawCenteredText(g, "Press ENTER to continue", _fnt12r, Color.FromArgb(140, 160, 200), py + 215)
+
+        ' Returning player list
+        Dim existing = GetExistingPlayerNames()
+        If existing.Count > 0 Then
+            DrawCenteredText(g, "— Returning players —", _fnt11r, Color.FromArgb(120, 140, 180), py + 255)
+            Dim ry = py + 278.0F
+            For Each nm In existing.Take(5)
+                Dim highlight = String.Equals(nm, _nameEntryInput, StringComparison.OrdinalIgnoreCase)
+                Dim nc = If(highlight, Color.FromArgb(255, 220, 80), Color.FromArgb(180, 190, 210))
+                DrawCenteredText(g, nm, _fnt12b, nc, ry)
+                ry += 24
+            Next
+        End If
+
+        DrawCenteredText(g, "New name = new profile   |   Same name = restore saves", _fnt10r, Color.FromArgb(100, 120, 150), py + ph - 28)
     End Sub
 
     Private Sub DrawMenu(g As Graphics)
@@ -2050,7 +2835,8 @@ Public Class Form1
         ElseIf _highScore > 0 Then
             DrawCenteredText(g, $"High Score: {_highScore}", _fnt14r, Color.FromArgb(255, 255, 120), 355)
         End If
-        DrawCenteredText(g, ChrW(&H2699) & "  Press H or O for OPTIONS  " & ChrW(&H2699), _fnt14b, Color.FromArgb(100, 200, 255), 420)
+        DrawCenteredText(g, ChrW(&H25C6) & $"  Press S for STORE  ({_coinBalance} coins)  " & ChrW(&H25C6), _fnt14b, Color.FromArgb(255, 220, 60), 390)
+        DrawCenteredText(g, ChrW(&H2699) & "  Press H or O for OPTIONS  |  C for CREDITS  " & ChrW(&H2699), _fnt14b, Color.FromArgb(100, 200, 255), 420)
         Dim keyArr = TryGetSprite("ui/key_arrows")
         Dim keyF = TryGetSprite("ui/key_f")
         Dim keyP = TryGetSprite("ui/key_p")
@@ -2061,6 +2847,8 @@ Public Class Form1
         DrawCenteredText(g, $"Music: {_musicStyleNames(_musicStyle)}  |  SFX: {_sfxStyleNames(_sfxStyle)}", _fnt11r, Color.FromArgb(120, 140, 180), 488)
         DrawCenteredText(g, $"Window: {_windowScaleNames(_windowScale)}", _fnt11r, Color.FromArgb(120, 140, 180), 518)
         DrawCenteredText(g, "Destroy bricks  " & ChrW(8226) & "  Catch power-ups  " & ChrW(8226) & "  Build combos!", _fnt11r, Color.FromArgb(150, 150, 170), 548)
+        DrawCenteredText(g, "BrickBlast: Velocity Market  |  v1.0.0", _fnt10r, Color.FromArgb(80, 90, 110), 570)
+        DrawCenteredText(g, "[F12] Export marketing assets  |  [C] Credits  |  [S] Store  |  [H] Settings", _fnt10r, Color.FromArgb(55, 70, 90), 588)
     End Sub
 
     Private Sub DrawGame(g As Graphics)
@@ -2076,37 +2864,53 @@ Public Class Form1
 
     Private Sub DrawHUD(g As Graphics)
         Dim f = _fnt13b
-            ' Score with optional star icon
-            Dim starSpr = TryGetSprite("ui/star")
-            If starSpr IsNot Nothing Then
-                g.DrawImage(starSpr, 15, 11, 20, 20)
-            End If
-            DrawTextShadow(g, $"SCORE: {_score}", f, Color.White, CSng(If(starSpr IsNot Nothing, 38, 15)), 12)
-            DrawCenteredText(g, $"LEVEL {_level}", f, Color.FromArgb(180, 200, 255), 12)
-            ' Lives — drawn directly so transparency issues with DrawImage never occur
-            Dim hSz As Single = 22, hPad As Single = 2
-            Dim hX = CSng(LOGICAL_WIDTH - 15 - (hSz + hPad) * _lives)
-            For h = 0 To _lives - 1
-                DrawHeartShape(g, hX + h * (hSz + hPad), 10.0F, hSz, hSz, Color.FromArgb(255, 80, 100))
-            Next
-            If _speedBoost Then
-                Dim bt = ChrW(&H26A1) & " 2x SPEED"
-                Dim bsz = g.MeasureString(bt, f)
-                DrawTextShadow(g, bt, f, Color.FromArgb(255, 255, 80), (LOGICAL_WIDTH - bsz.Width) / 2, 32)
-            End If
-            If _ballRadius <> BALL_RADIUS Then
-                Dim rt = $"Ball: {_ballRadius}px"
-                DrawTextShadow(g, rt, f, Color.FromArgb(150, 200, 255), 15, 32)
-            End If
-            If _paddleWidthTimer > 0 Then
-                Dim sec = CInt(Math.Ceiling(_paddleWidthTimer / 60.0))
-                Dim pt = $"Paddle: {sec}s"
-                Dim psz = g.MeasureString(pt, f)
-                DrawTextShadow(g, pt, f, Color.FromArgb(170, 80, 255), LOGICAL_WIDTH - psz.Width - 15, 32)
-            End If
+        ' Score with optional star icon
+        Dim starSpr = TryGetSprite("ui/star")
+        If starSpr IsNot Nothing Then
+            g.DrawImage(starSpr, 15, 11, 20, 20)
+        End If
+        DrawTextShadow(g, $"SCORE: {_score}", f, Color.White, CSng(If(starSpr IsNot Nothing, 38, 15)), 12)
+        DrawCenteredText(g, $"LEVEL {_level}", f, Color.FromArgb(180, 200, 255), 12)
+        ' Lives — drawn directly so transparency issues with DrawImage never occur
+        Dim hSz As Single = 22, hPad As Single = 2
+        Dim hX = CSng(LOGICAL_WIDTH - 15 - (hSz + hPad) * _lives)
+        For h = 0 To _lives - 1
+            DrawHeartShape(g, hX + h * (hSz + hPad), 10.0F, hSz, hSz, Color.FromArgb(255, 80, 100))
+        Next
+        If _speedBoost Then
+            Dim bt = ChrW(&H26A1) & " 2x SPEED"
+            Dim bsz = g.MeasureString(bt, f)
+            DrawTextShadow(g, bt, f, Color.FromArgb(255, 255, 80), (LOGICAL_WIDTH - bsz.Width) / 2, 32)
+        End If
+        If _ballRadius <> BALL_RADIUS Then
+            Dim rt = $"Ball: {_ballRadius}px"
+            DrawTextShadow(g, rt, f, Color.FromArgb(150, 200, 255), 15, 32)
+        End If
+        If _paddleWidthTimer > 0 Then
+            Dim sec = CInt(Math.Ceiling(_paddleWidthTimer / 60.0))
+            Dim pt = $"Paddle: {sec}s"
+            Dim psz = g.MeasureString(pt, f)
+            DrawTextShadow(g, pt, f, Color.FromArgb(170, 80, 255), LOGICAL_WIDTH - psz.Width - 15, 32)
+        End If
+        ' Coin balance — top-centre below level label
+        Dim coinText = If(_devMode, $"{ChrW(&H25C6)} DEV", $"{ChrW(&H25C6)} {_coinBalance}")
+        Dim coinSz = g.MeasureString(coinText, f)
+        Dim coinColor = If(_devMode, Color.FromArgb(100, 255, 100), Color.FromArgb(255, 220, 60))
+        DrawTextShadow(g, coinText, f, coinColor, (LOGICAL_WIDTH - coinSz.Width) / 2, 32)
         Using pen As New Pen(Color.FromArgb(40, 100, 180, 255), 1)
             g.DrawLine(pen, 0, 50, LOGICAL_WIDTH, 50)
         End Using
+        ' Sync status — bottom-right corner
+        Dim syncLabel = GetSyncLabel()
+        Dim syncF = _fnt11r
+        Dim syncSz = g.MeasureString(syncLabel, syncF)
+        Dim syncColor = If(_syncStatus = "Synced", Color.FromArgb(80, 220, 80),
+                        If(_syncStatus = "Syncing", Color.FromArgb(255, 220, 60),
+                        If(_syncStatus = "Failed", Color.FromArgb(255, 80, 80),
+                        Color.FromArgb(140, 140, 140))))
+        DrawTextShadow(g, syncLabel, syncF, syncColor,
+                       CSng(LOGICAL_WIDTH - syncSz.Width - 8),
+                       CSng(LOGICAL_HEIGHT - syncSz.Height - 6))
     End Sub
 
     Private Sub DrawBricks(g As Graphics)
@@ -2197,15 +3001,58 @@ Public Class Form1
         Dim br2 = _ballRadius
         For Each b In _balls
             If Not b.Active Then Continue For
+            ' Determine skin colors first so they can be used in the glow loop below
+            Dim ballTop As Color, ballBot As Color, glowBase As Color
+            Select Case _activeBallSkin
+                Case "fire"
+                    ballTop = Color.FromArgb(255, 220, 80) : ballBot = Color.FromArgb(220, 60, 0) : glowBase = Color.FromArgb(255, 140, 20)
+                Case "ice"
+                    ballTop = Color.FromArgb(200, 240, 255) : ballBot = Color.FromArgb(40, 160, 220) : glowBase = Color.FromArgb(100, 220, 255)
+                Case "plasma"
+                    ballTop = Color.FromArgb(220, 160, 255) : ballBot = Color.FromArgb(100, 0, 200) : glowBase = Color.FromArgb(180, 80, 255)
+                Case "gold"
+                    ballTop = Color.FromArgb(255, 245, 120) : ballBot = Color.FromArgb(200, 140, 0) : glowBase = Color.FromArgb(255, 200, 0)
+                Case "rainbow"
+                    Dim hue = (_frameCount * 3) Mod 360
+                    ballTop = ColorFromHSV(hue, 0.9, 1.0) : ballBot = ColorFromHSV((hue + 120) Mod 360, 1.0, 0.8) : glowBase = ballTop
+                Case "lava"
+                    ballTop = Color.FromArgb(255, 80, 20) : ballBot = Color.FromArgb(180, 20, 0) : glowBase = Color.FromArgb(255, 60, 0)
+                Case "void"
+                    ballTop = Color.FromArgb(60, 0, 80) : ballBot = Color.FromArgb(10, 0, 20) : glowBase = Color.FromArgb(120, 0, 180)
+                Case "toxic"
+                    ballTop = Color.FromArgb(160, 255, 60) : ballBot = Color.FromArgb(60, 160, 0) : glowBase = Color.FromArgb(120, 255, 40)
+                Case "neon"
+                    ballTop = Color.FromArgb(0, 255, 240) : ballBot = Color.FromArgb(0, 160, 200) : glowBase = Color.FromArgb(0, 240, 255)
+                Case "crystal"
+                    ballTop = Color.FromArgb(220, 240, 255) : ballBot = Color.FromArgb(160, 200, 240) : glowBase = Color.FromArgb(200, 230, 255)
+                Case "shadow"
+                    ballTop = Color.FromArgb(120, 60, 180) : ballBot = Color.FromArgb(40, 0, 80) : glowBase = Color.FromArgb(100, 40, 160)
+                Case "sakura"
+                    ballTop = Color.FromArgb(255, 200, 220) : ballBot = Color.FromArgb(220, 100, 140) : glowBase = Color.FromArgb(255, 160, 190)
+                Case "copper"
+                    ballTop = Color.FromArgb(220, 130, 80) : ballBot = Color.FromArgb(140, 70, 30) : glowBase = Color.FromArgb(200, 110, 60)
+                Case "ocean"
+                    ballTop = Color.FromArgb(60, 200, 200) : ballBot = Color.FromArgb(0, 100, 140) : glowBase = Color.FromArgb(40, 180, 200)
+                Case "star"
+                    Dim sh = (_frameCount * 2) Mod 360
+                    ballTop = ColorFromHSV(sh, 0.3, 1.0) : ballBot = Color.FromArgb(200, 180, 60) : glowBase = Color.FromArgb(255, 240, 120)
+                Case "obsidian"
+                    ballTop = Color.FromArgb(60, 50, 70) : ballBot = Color.FromArgb(10, 8, 14) : glowBase = Color.FromArgb(90, 70, 110)
+                Case "aurora"
+                    Dim ah = (_frameCount * 2 + 60) Mod 360
+                    ballTop = ColorFromHSV(ah, 0.8, 0.9) : ballBot = ColorFromHSV((ah + 100) Mod 360, 1.0, 0.7) : glowBase = ballTop
+                Case Else ' base
+                    ballTop = If(_speedBoost, Color.FromArgb(255, 255, 200), Color.White)
+                    ballBot = If(_speedBoost, Color.FromArgb(255, 140, 20), Color.FromArgb(160, 210, 255))
+                    glowBase = If(_speedBoost, Color.FromArgb(255, 200, 50), Color.FromArgb(200, 230, 255))
+            End Select
             For gs = 20 To 4 Step -4
                 Dim al = CInt(20 * (4.0 / gs))
-                Dim glowC = If(_speedBoost, Color.FromArgb(al, 255, 200, 50), Color.FromArgb(al, 200, 230, 255))
+                Dim glowC = Color.FromArgb(al, glowBase)
                 Using br As New SolidBrush(glowC)
                     g.FillEllipse(br, CSng(b.X - gs / 2), CSng(b.Y - gs / 2), CSng(gs), CSng(gs))
                 End Using
             Next
-            Dim ballTop = If(_speedBoost, Color.FromArgb(255, 255, 200), Color.White)
-            Dim ballBot = If(_speedBoost, Color.FromArgb(255, 140, 20), Color.FromArgb(160, 210, 255))
             Using br As New LinearGradientBrush(New RectangleF(b.X - br2, b.Y - br2, br2 * 2, br2 * 2), ballTop, ballBot, LinearGradientMode.ForwardDiagonal)
                 g.FillEllipse(br, b.X - br2, b.Y - br2, br2 * 2, br2 * 2)
             End Using
@@ -2216,31 +3063,1315 @@ Public Class Form1
     End Sub
 
     Private Sub DrawPowerUps(g As Graphics)
-        Dim puSprKeys() As String = {"ui/powerup_grow", "ui/powerup_life", "ui/powerup_multi",
-                                      "ui/powerup_shrink", "ui/powerup_mega", "ui/powerup_slow", "ui/powerup_fast"}
         For Each pu In _powerUps
             If Not pu.Active Then Continue For
             Dim bob = CSng(Math.Sin(_frameCount * 0.1) * 3)
             Dim cy = pu.Y + bob
-            Using br As New SolidBrush(Color.FromArgb(40, pu.Color1))
-                g.FillEllipse(br, pu.X - 14, cy - 14, 28, 28)
+            Dim sz = CSng(POWERUP_SIZE)
+            Dim cx = pu.X
+
+            ' Outer glow
+            Using br As New SolidBrush(Color.FromArgb(45, pu.Color1))
+                g.FillEllipse(br, cx - sz * 0.7F, cy - sz * 0.7F, sz * 1.4F, sz * 1.4F)
             End Using
-            Dim puIdx = CInt(pu.PType)
-            Dim puSpr = If(puIdx >= 0 AndAlso puIdx < puSprKeys.Length, TryGetSprite(puSprKeys(puIdx)), Nothing)
-            If puSpr IsNot Nothing Then
-                Dim sz2 = CSng(POWERUP_SIZE)
-                g.DrawImage(puSpr, pu.X - sz2 / 2, cy - sz2 / 2, sz2, sz2)
-                Dim ts = g.MeasureString(pu.Symbol, _fnt11b)
-                DrawTextShadow(g, pu.Symbol, _fnt11b, Color.White, pu.X - ts.Width / 2, cy - ts.Height / 2)
-            Else
-                Using br As New SolidBrush(Color.FromArgb(200, pu.Color1.R, pu.Color1.G, pu.Color1.B))
-                    g.FillEllipse(br, CSng(pu.X - POWERUP_SIZE / 2), CSng(cy - POWERUP_SIZE / 2), CSng(POWERUP_SIZE), CSng(POWERUP_SIZE))
-                End Using
-                Dim ts = g.MeasureString(pu.Symbol, _fnt18b)
-                DrawTextShadow(g, pu.Symbol, _fnt18b, Color.White, pu.X - ts.Width / 2, cy - ts.Height / 2)
-            End If
+
+            ' Themed body shape (pack-aware: circle, diamond, hex, shield, star, or rounded-square)
+            Dim darkC = Color.FromArgb(160, Math.Max(0, pu.Color1.R - 60), Math.Max(0, pu.Color1.G - 60), Math.Max(0, pu.Color1.B - 60))
+            DrawBonusBody(g, cx, cy, sz, pu.Color1, darkC)
+
+            ' Shine
+            Using br As New SolidBrush(Color.FromArgb(90, 255, 255, 255))
+                g.FillEllipse(br, cx - sz * 0.3F, cy - sz * 0.38F, sz * 0.32F, sz * 0.22F)
+            End Using
+
+            ' Procedural icon drawn inside the circle
+            DrawPowerUpIcon(g, pu.PType, cx, cy, sz * 0.36F, pu.Color1)
         Next
     End Sub
+
+    ' =======================================================================
+    ' BONUS PACK THEMING HELPERS
+    ' Each bonus pack defines: body color per slot, icon glyph, and body shape.
+    ' Body shapes: 0=circle, 1=diamond, 2=hexagon, 3=shield, 4=star, 5=rounded-square
+    ' =======================================================================
+
+    ' Returns the themed fill color for a given power-up slot under the active bonus pack.
+    Private Function GetBonusPackColor(pType As PowerUpType) As Color
+        Select Case _activeBonusPack
+            Case "ninja"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(30, 30, 30)     ' ink black — shuriken grow
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(200, 20, 20)    ' blood red — life scroll
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(80, 180, 60)    ' forest green — clone smoke
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(200, 200, 0)    ' golden shuriken
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(50, 50, 100)    ' midnight — ninjato
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(180, 90, 0)     ' smoke bomb orange
+                    Case Else                        : Return Color.FromArgb(220, 50, 50)    ' crimson — speed dash
+                End Select
+
+            Case "space"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(30, 80, 200)    ' rocket thruster blue
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(200, 50, 200)   ' alien life nebula
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(0, 200, 180)    ' teal warp clones
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(255, 220, 40)   ' sun shrink
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(100, 0, 200)    ' gravity field
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(180, 100, 0)    ' asteroid belt
+                    Case Else                        : Return Color.FromArgb(0, 180, 255)    ' hyperdrive cyan
+                End Select
+
+            Case "candy"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(50, 150, 255)   ' blueberry gum
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(255, 60, 120)   ' strawberry heart
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(100, 220, 80)   ' lime gummy x3
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(255, 230, 50)   ' lemon drop
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(180, 80, 220)   ' grape jawbreaker
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(255, 140, 30)   ' orange creamsicle
+                    Case Else                        : Return Color.FromArgb(255, 120, 180)  ' pink cotton candy
+                End Select
+
+            Case "cyber"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(0, 200, 255)    ' data stream cyan
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(255, 0, 80)     ' glitch red
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(0, 255, 120)    ' matrix green
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(220, 255, 0)    ' neon yellow
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(160, 0, 255)    ' circuit violet
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(255, 100, 0)    ' firewall orange
+                    Case Else                        : Return Color.FromArgb(0, 255, 200)    ' teal uplink
+                End Select
+
+            Case "medieval"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(60, 80, 180)    ' royal cobalt
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(180, 20, 20)    ' crimson potion
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(20, 140, 60)    ' emerald clone
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(200, 180, 30)   ' golden shrink rune
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(80, 20, 120)    ' enchanted shield
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(160, 100, 20)   ' bronze slow rune
+                    Case Else                        : Return Color.FromArgb(200, 160, 60)   ' gilded speed crown
+                End Select
+
+            Case "ocean"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(0, 120, 200)    ' deep sea
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(200, 60, 80)    ' coral heart
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(0, 180, 140)    ' kelp forest
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(240, 210, 60)   ' sand dollar
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(80, 0, 160)     ' ink octopus
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(200, 120, 0)    ' starfish slow
+                    Case Else                        : Return Color.FromArgb(0, 200, 220)    ' surf turquoise
+                End Select
+
+            Case "retro"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(0, 80, 200)     ' 8-bit blue
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(200, 0, 0)      ' pixel heart red
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(0, 160, 0)      ' game boy green
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(255, 200, 0)    ' gold coin
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(100, 0, 160)    ' power pill purple
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(200, 80, 0)     ' fire flower
+                    Case Else                        : Return Color.FromArgb(255, 60, 100)   ' extra life red
+                End Select
+
+            Case "magic"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(40, 60, 200)    ' arcane blue
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(160, 0, 180)    ' transmute violet
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(0, 180, 80)     ' summoning green
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(220, 180, 0)    ' alchemy gold
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(100, 0, 220)    ' enchantment purple
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(180, 80, 0)     ' time slow amber
+                    Case Else                        : Return Color.FromArgb(255, 100, 200)  ' haste pink
+                End Select
+
+            Case "dragon"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(0, 80, 160)     ' ice dragon
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(200, 30, 0)     ' flame scale
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(20, 160, 40)    ' forest wyvern
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(200, 160, 0)    ' gold hoard
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(80, 0, 140)     ' void dragon
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(180, 60, 0)     ' lava breath
+                    Case Else                        : Return Color.FromArgb(220, 80, 200)   ' chaos wing
+                End Select
+
+            Case "sakura"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(120, 160, 220)  ' clear sky
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(220, 80, 120)   ' blossom life
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(100, 180, 120)  ' bamboo
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(240, 210, 150)  ' rice paper
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(160, 100, 200)  ' wisteria
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(200, 130, 60)   ' maple amber
+                    Case Else                        : Return Color.FromArgb(255, 160, 190)  ' petal pink
+                End Select
+
+            Case "robot"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(40, 120, 200)   ' servo blue
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(200, 40, 40)    ' laser eye red
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(40, 200, 100)   ' replication green
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(220, 200, 40)   ' cpu gold
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(80, 40, 180)    ' power core
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(200, 100, 20)   ' gear oil
+                    Case Else                        : Return Color.FromArgb(0, 220, 220)    ' turbo teal
+                End Select
+
+            Case "pirate"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(20, 80, 160)    ' ocean deep
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(180, 20, 20)    ' skull red
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(0, 140, 80)     ' sea foam
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(200, 160, 0)    ' doubloon gold
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(60, 0, 100)     ' jolly roger purple
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(160, 80, 0)     ' rum barrel
+                    Case Else                        : Return Color.FromArgb(120, 60, 0)     ' ship timber
+                End Select
+
+            Case "galaxy"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(0, 60, 200)     ' blue supergiant
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(200, 0, 100)    ' pulsar magenta
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(0, 200, 160)    ' nebula teal
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(255, 220, 60)   ' solar flare
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(100, 0, 200)    ' wormhole violet
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(180, 80, 0)     ' comet trail
+                    Case Else                        : Return Color.FromArgb(0, 220, 255)    ' hyperspace
+                End Select
+
+            Case "festival"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(40, 120, 220)   ' sky firework
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(220, 40, 80)    ' confetti red
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(40, 200, 80)    ' party green
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(255, 220, 40)   ' golden sparkler
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(160, 60, 220)   ' violet burst
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(220, 120, 20)   ' lantern orange
+                    Case Else                        : Return Color.FromArgb(255, 80, 160)   ' ribbon pink
+                End Select
+
+            Case "horror"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(0, 40, 80)      ' midnight
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(160, 0, 0)      ' blood
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(60, 140, 0)     ' slime green
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(180, 160, 0)    ' ghost yellow
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(60, 0, 100)     ' crypt purple
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(160, 60, 0)     ' pumpkin
+                    Case Else                        : Return Color.FromArgb(100, 100, 100)  ' ash grey
+                End Select
+
+            Case "golden"
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(200, 160, 0)    ' amber
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(220, 120, 0)    ' bronze
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(180, 180, 0)    ' gold-green
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(255, 230, 60)   ' bright gold
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(180, 140, 0)    ' crown gold
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(200, 100, 0)    ' rose gold
+                    Case Else                        : Return Color.FromArgb(240, 200, 80)   ' gilded
+                End Select
+
+            Case Else ' base — original colors
+                Select Case pType
+                    Case PowerUpType.BlueBallGrow    : Return Color.FromArgb(50, 120, 255)
+                    Case PowerUpType.RedBallShrink   : Return Color.FromArgb(255, 60, 60)
+                    Case PowerUpType.GreenMultiBall  : Return Color.FromArgb(50, 220, 100)
+                    Case PowerUpType.YellowBallShrink: Return Color.FromArgb(255, 220, 50)
+                    Case PowerUpType.PurplePaddleMega: Return Color.FromArgb(170, 80, 255)
+                    Case PowerUpType.OrangeBallSlow  : Return Color.FromArgb(255, 150, 60)
+                    Case Else                        : Return Color.FromArgb(255, 120, 200)
+                End Select
+        End Select
+    End Function
+
+    ' Returns the container body shape index for the active bonus pack.
+    ' 0=circle  1=diamond  2=hexagon  3=shield  4=star  5=rounded-square
+    Private Function GetBonusPackBodyShape() As Integer
+        Select Case _activeBonusPack
+            Case "ninja"    : Return 1   ' diamond — shuriken
+            Case "space"    : Return 2   ' hexagon — hull plate
+            Case "candy"    : Return 5   ' rounded-square — candy box
+            Case "cyber"    : Return 5   ' rounded-square — circuit chip
+            Case "medieval" : Return 3   ' shield
+            Case "ocean"    : Return 0   ' circle — bubble
+            Case "retro"    : Return 5   ' rounded-square — pixel block
+            Case "magic"    : Return 4   ' star — spell orb
+            Case "dragon"   : Return 1   ' diamond — scale facet
+            Case "sakura"   : Return 0   ' circle — petal round
+            Case "robot"    : Return 5   ' rounded-square — chassis panel
+            Case "pirate"   : Return 3   ' shield — cannon ball
+            Case "galaxy"   : Return 2   ' hexagon — space station
+            Case "festival" : Return 4   ' star — firework burst
+            Case "horror"   : Return 1   ' diamond — coffin lid
+            Case "golden"   : Return 4   ' star — laurel star
+            Case Else       : Return 0   ' base — circle
+        End Select
+    End Function
+
+    ' Draws the bonus-pack container body (replaces the plain ellipse in DrawPowerUps).
+    Private Sub DrawBonusBody(g As Graphics, cx As Single, cy As Single, sz As Single, fillColor As Color, darkColor As Color)
+        Dim shape = GetBonusPackBodyShape()
+        Dim hs = sz / 2
+        Using br As New LinearGradientBrush(
+                New RectangleF(cx - hs, cy - hs, sz, sz),
+                Color.FromArgb(230, fillColor),
+                Color.FromArgb(160, darkColor),
+                LinearGradientMode.ForwardDiagonal)
+
+            Select Case shape
+                Case 1 ' diamond
+                    Dim dpts() As PointF = {
+                        New PointF(cx, cy - hs),
+                        New PointF(cx + hs, cy),
+                        New PointF(cx, cy + hs),
+                        New PointF(cx - hs, cy)
+                    }
+                    g.FillPolygon(br, dpts)
+
+                Case 2 ' hexagon
+                    Dim hpts(5) As PointF
+                    For i = 0 To 5
+                        Dim ang = (i * 60 - 30) * Math.PI / 180.0
+                        hpts(i) = New PointF(cx + CSng(Math.Cos(ang) * hs), cy + CSng(Math.Sin(ang) * hs))
+                    Next
+                    g.FillPolygon(br, hpts)
+
+                Case 3 ' shield
+                    Dim spts() As PointF = {
+                        New PointF(cx - hs, cy - hs),
+                        New PointF(cx + hs, cy - hs),
+                        New PointF(cx + hs, cy + hs * 0.3F),
+                        New PointF(cx, cy + hs),
+                        New PointF(cx - hs, cy + hs * 0.3F)
+                    }
+                    g.FillPolygon(br, spts)
+
+                Case 4 ' star (5-point)
+                    Dim stpts(9) As PointF
+                    For i = 0 To 9
+                        Dim ang = (i * 36 - 90) * Math.PI / 180.0
+                        Dim rad = If(i Mod 2 = 0, hs, hs * 0.42F)
+                        stpts(i) = New PointF(cx + CSng(Math.Cos(ang) * rad), cy + CSng(Math.Sin(ang) * rad))
+                    Next
+                    g.FillPolygon(br, stpts)
+
+                Case 5 ' rounded-square
+                    Using rr = RoundedRect(New RectangleF(cx - hs, cy - hs, sz, sz), CInt(hs * 0.28F))
+                        g.FillPath(br, rr)
+                    End Using
+
+                Case Else ' circle
+                    g.FillEllipse(br, cx - hs, cy - hs, sz, sz)
+            End Select
+        End Using
+    End Sub
+
+    ' Draws a simple GDI+ icon for each power-up type — no external assets required.
+    ' Routes to pack-specific themed artwork when a bonus pack is active.
+    Private Sub DrawPowerUpIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, baseColor As Color)
+        Using brW As New SolidBrush(Color.FromArgb(230, 255, 255, 255))
+            Select Case _activeBonusPack
+                Case "ninja"
+                    DrawNinjaIcon(g, pType, cx, cy, r, brW)
+                Case "space"
+                    DrawSpaceIcon(g, pType, cx, cy, r, brW)
+                Case "candy"
+                    DrawCandyIcon(g, pType, cx, cy, r, brW)
+                Case "cyber"
+                    DrawCyberIcon(g, pType, cx, cy, r, brW)
+                Case "medieval"
+                    DrawMedievalIcon(g, pType, cx, cy, r, brW)
+                Case "ocean"
+                    DrawOceanIcon(g, pType, cx, cy, r, brW)
+                Case "retro"
+                    DrawRetroIcon(g, pType, cx, cy, r, brW)
+                Case "magic"
+                    DrawMagicIcon(g, pType, cx, cy, r, brW)
+                Case "dragon"
+                    DrawDragonIcon(g, pType, cx, cy, r, brW)
+                Case "sakura"
+                    DrawSakuraIcon(g, pType, cx, cy, r, brW)
+                Case "robot"
+                    DrawRobotIcon(g, pType, cx, cy, r, brW)
+                Case "pirate"
+                    DrawPirateIcon(g, pType, cx, cy, r, brW)
+                Case "galaxy"
+                    DrawGalaxyIcon(g, pType, cx, cy, r, brW)
+                Case "festival"
+                    DrawFestivalIcon(g, pType, cx, cy, r, brW)
+                Case "horror"
+                    DrawHorrorIcon(g, pType, cx, cy, r, brW)
+                Case "golden"
+                    DrawGoldenIcon(g, pType, cx, cy, r, brW)
+                Case Else
+                    DrawBaseIcon(g, pType, cx, cy, r, brW)
+            End Select
+        End Using
+
+        If _colorblindMode Then
+            Dim lbl = GetPowerUpCBLabel(pType)
+            Dim ts = g.MeasureString(lbl, _fnt8b)
+            Using brB As New SolidBrush(Color.FromArgb(220, 20, 20, 20))
+                g.DrawString(lbl, _fnt8b, brB, cx - ts.Width / 2 + 1, cy + r * 0.55F + 1)
+            End Using
+            Using brLbl As New SolidBrush(Color.White)
+                g.DrawString(lbl, _fnt8b, brLbl, cx - ts.Width / 2, cy + r * 0.55F)
+            End Using
+        End If
+    End Sub
+
+    Private Sub DrawBaseIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow
+                Dim t = r * 0.28F
+                g.FillRectangle(brW, cx - t / 2, cy - r, t, r * 2)
+                g.FillRectangle(brW, cx - r, cy - t / 2, r * 2, t)
+            Case PowerUpType.RedBallShrink
+                DrawHeartShape(g, cx - r, cy - r * 0.9F, r * 2, r * 2, Color.FromArgb(230, 255, 120, 140))
+            Case PowerUpType.GreenMultiBall
+                Dim ts = g.MeasureString("x3", _fnt11b)
+                g.DrawString("x3", _fnt11b, brW, cx - ts.Width / 2, cy - ts.Height / 2)
+            Case PowerUpType.YellowBallShrink
+                g.FillRectangle(brW, cx - r, cy - r * 0.14F, r * 2, r * 0.28F)
+            Case PowerUpType.PurplePaddleMega
+                Dim bw = r * 1.8F, bh = r * 0.35F
+                Using rr = RoundedRect(New RectangleF(cx - bw / 2, cy - bh / 2, bw, bh), 3)
+                    g.FillPath(brW, rr)
+                End Using
+            Case PowerUpType.OrangeBallSlow
+                Dim pts() As PointF = {New PointF(cx, cy + r), New PointF(cx - r * 0.7F, cy - r * 0.3F), New PointF(cx + r * 0.7F, cy - r * 0.3F)}
+                g.FillPolygon(brW, pts)
+            Case PowerUpType.PinkBallFast
+                Dim pts2() As PointF = {New PointF(cx, cy - r), New PointF(cx - r * 0.7F, cy + r * 0.3F), New PointF(cx + r * 0.7F, cy + r * 0.3F)}
+                g.FillPolygon(brW, pts2)
+        End Select
+    End Sub
+
+    ' ---- Pack-specific icon painters ----
+
+    Private Sub DrawNinjaIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' shuriken (4-blade)
+                For angle As Integer = 0 To 315 Step 90
+                    Dim a = angle * Math.PI / 180.0
+                    Dim pts() As PointF = {
+                        New PointF(cx, cy),
+                        New PointF(cx + CSng(Math.Cos(a) * r), cy + CSng(Math.Sin(a) * r)),
+                        New PointF(cx + CSng(Math.Cos(a + Math.PI / 4) * r * 0.5F), cy + CSng(Math.Sin(a + Math.PI / 4) * r * 0.5F))
+                    }
+                    g.FillPolygon(brW, pts)
+                Next
+            Case PowerUpType.RedBallShrink ' scroll
+                Using pen As New Pen(brW.Color, r * 0.22F)
+                    g.DrawLine(pen, cx - r * 0.7F, cy, cx + r * 0.7F, cy)
+                    g.DrawLine(pen, cx - r * 0.7F, cy - r * 0.35F, cx + r * 0.7F, cy - r * 0.35F)
+                    g.DrawLine(pen, cx - r * 0.7F, cy + r * 0.35F, cx + r * 0.7F, cy + r * 0.35F)
+                End Using
+            Case PowerUpType.GreenMultiBall ' smoke bomb circles
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.7F
+                    g.FillEllipse(brW, cx + ox - r * 0.28F, cy - r * 0.28F, r * 0.56F, r * 0.56F)
+                Next
+            Case PowerUpType.YellowBallShrink ' kunai blade
+                Dim kpts() As PointF = {
+                    New PointF(cx, cy - r),
+                    New PointF(cx + r * 0.2F, cy + r * 0.4F),
+                    New PointF(cx, cy + r * 0.2F),
+                    New PointF(cx - r * 0.2F, cy + r * 0.4F)
+                }
+                g.FillPolygon(brW, kpts)
+            Case PowerUpType.PurplePaddleMega ' ninjato (long rectangle)
+                Dim bw = r * 0.22F, bh = r * 1.8F
+                g.FillRectangle(brW, cx - bw / 2, cy - bh / 2, bw, bh)
+            Case PowerUpType.OrangeBallSlow ' smoke cloud circles
+                Using sbr As New SolidBrush(Color.FromArgb(160, 255, 255, 255))
+                    g.FillEllipse(sbr, cx - r * 0.9F, cy - r * 0.4F, r * 1.0F, r * 0.8F)
+                    g.FillEllipse(sbr, cx - r * 0.1F, cy - r * 0.6F, r * 1.0F, r * 0.9F)
+                    g.FillEllipse(sbr, cx - r * 0.4F, cy + r * 0.0F, r * 0.7F, r * 0.6F)
+                End Using
+            Case PowerUpType.PinkBallFast ' dash lines
+                Using pen As New Pen(brW.Color, r * 0.18F)
+                    For i = -1 To 1
+                        g.DrawLine(pen, cx + i * r * 0.4F - r * 0.4F, cy + i * r * 0.4F, cx + i * r * 0.4F + r * 0.4F, cy + i * r * 0.4F - r * 0.5F)
+                    Next
+                End Using
+        End Select
+    End Sub
+
+    Private Sub DrawSpaceIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' rocket
+                Dim rpts() As PointF = {New PointF(cx, cy - r), New PointF(cx + r * 0.4F, cy + r * 0.5F), New PointF(cx - r * 0.4F, cy + r * 0.5F)}
+                g.FillPolygon(brW, rpts)
+                Using pen As New Pen(Color.FromArgb(200, 255, 160, 0), r * 0.2F)
+                    g.DrawLine(pen, cx, cy + r * 0.5F, cx, cy + r)
+                End Using
+            Case PowerUpType.RedBallShrink ' planet with ring
+                g.FillEllipse(brW, cx - r * 0.55F, cy - r * 0.55F, r * 1.1F, r * 1.1F)
+                Using pen As New Pen(Color.FromArgb(180, 255, 255, 255), r * 0.15F)
+                    g.DrawEllipse(pen, cx - r * 0.85F, cy - r * 0.25F, r * 1.7F, r * 0.5F)
+                End Using
+            Case PowerUpType.GreenMultiBall ' three stars
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.7F
+                    Dim stpts(7) As PointF
+                    For k = 0 To 7
+                        Dim ang2 = (k * 45 - 90) * Math.PI / 180.0
+                        Dim rad = If(k Mod 2 = 0, r * 0.3F, r * 0.14F)
+                        stpts(k) = New PointF(cx + ox + CSng(Math.Cos(ang2) * rad), cy + CSng(Math.Sin(ang2) * rad))
+                    Next
+                    g.FillPolygon(brW, stpts)
+                Next
+            Case PowerUpType.YellowBallShrink ' black hole (ring)
+                Using pen As New Pen(brW.Color, r * 0.2F)
+                    g.DrawEllipse(pen, cx - r * 0.65F, cy - r * 0.65F, r * 1.3F, r * 1.3F)
+                End Using
+            Case PowerUpType.PurplePaddleMega ' station bar
+                g.FillRectangle(brW, cx - r, cy - r * 0.18F, r * 2, r * 0.36F)
+                g.FillEllipse(brW, cx - r * 0.22F, cy - r * 0.55F, r * 0.44F, r * 1.1F)
+            Case PowerUpType.OrangeBallSlow ' asteroid lumpy circle
+                Using pen As New Pen(brW.Color, r * 0.2F)
+                    Dim apts(7) As PointF
+                    For i = 0 To 7
+                        Dim ang3 = i * 45 * Math.PI / 180.0
+                        Dim rad = r * (0.5F + CSng(_rng.NextDouble() * 0.25))
+                        apts(i) = New PointF(cx + CSng(Math.Cos(ang3) * rad), cy + CSng(Math.Sin(ang3) * rad))
+                    Next
+                    g.DrawPolygon(pen, apts)
+                End Using
+            Case PowerUpType.PinkBallFast ' lightning bolt
+                Dim lpts() As PointF = {
+                    New PointF(cx + r * 0.2F, cy - r),
+                    New PointF(cx - r * 0.1F, cy - r * 0.05F),
+                    New PointF(cx + r * 0.3F, cy - r * 0.05F),
+                    New PointF(cx - r * 0.2F, cy + r)
+                }
+                g.FillPolygon(brW, lpts)
+        End Select
+    End Sub
+
+    Private Sub DrawCandyIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' gumball circle + plus
+                g.FillEllipse(brW, cx - r * 0.7F, cy - r * 0.7F, r * 1.4F, r * 1.4F)
+                Dim t = r * 0.2F
+                Using brD As New SolidBrush(Color.FromArgb(200, 50, 150, 255))
+                    g.FillRectangle(brD, cx - t / 2, cy - r * 0.55F, t, r * 1.1F)
+                    g.FillRectangle(brD, cx - r * 0.55F, cy - t / 2, r * 1.1F, t)
+                End Using
+            Case PowerUpType.RedBallShrink ' strawberry heart
+                DrawHeartShape(g, cx - r, cy - r * 0.9F, r * 2, r * 2, Color.FromArgb(240, 255, 60, 100))
+            Case PowerUpType.GreenMultiBall ' three gummies
+                Dim cc() As Color = {Color.FromArgb(200, 100, 255, 80), Color.FromArgb(200, 255, 80, 120), Color.FromArgb(200, 80, 200, 255)}
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.72F
+                    Using gbr As New SolidBrush(cc(i))
+                        g.FillEllipse(gbr, cx + ox - r * 0.3F, cy - r * 0.3F, r * 0.6F, r * 0.6F)
+                    End Using
+                Next
+            Case PowerUpType.YellowBallShrink ' lollipop
+                Using pen As New Pen(Color.FromArgb(200, 180, 100, 0), r * 0.18F)
+                    g.DrawLine(pen, cx, cy - r * 0.3F, cx, cy + r)
+                End Using
+                g.FillEllipse(brW, cx - r * 0.5F, cy - r, r, r)
+            Case PowerUpType.PurplePaddleMega ' candy bar rectangle
+                Using rr = RoundedRect(New RectangleF(cx - r, cy - r * 0.32F, r * 2, r * 0.64F), 4)
+                    g.FillPath(brW, rr)
+                End Using
+                Using pen As New Pen(Color.FromArgb(160, 200, 80, 200), r * 0.12F)
+                    g.DrawLine(pen, cx - r * 0.35F, cy - r * 0.32F, cx - r * 0.35F, cy + r * 0.32F)
+                    g.DrawLine(pen, cx + r * 0.35F, cy - r * 0.32F, cx + r * 0.35F, cy + r * 0.32F)
+                End Using
+            Case PowerUpType.OrangeBallSlow ' swirl — concentric arcs
+                For k = 1 To 3
+                    Using pen As New Pen(Color.FromArgb(200 - k * 40, 255, 255, 255), r * 0.15F)
+                        g.DrawArc(pen, cx - k * r * 0.3F, cy - k * r * 0.3F, k * r * 0.6F, k * r * 0.6F, 0, 270)
+                    End Using
+                Next
+            Case PowerUpType.PinkBallFast ' star sprinkle
+                Dim stpts2(9) As PointF
+                For i = 0 To 9
+                    Dim ang4 = (i * 36 - 90) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r * 0.9F, r * 0.38F)
+                    stpts2(i) = New PointF(cx + CSng(Math.Cos(ang4) * rad), cy + CSng(Math.Sin(ang4) * rad))
+                Next
+                g.FillPolygon(brW, stpts2)
+        End Select
+    End Sub
+
+    Private Sub DrawCyberIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Dim t = r * 0.22F
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' circuit cross
+                g.FillRectangle(brW, cx - t / 2, cy - r, t, r * 2)
+                g.FillRectangle(brW, cx - r, cy - t / 2, r * 2, t)
+                g.FillEllipse(brW, cx - t, cy - t, t * 2, t * 2)
+            Case PowerUpType.RedBallShrink ' exclamation chip
+                g.FillRectangle(brW, cx - t / 2, cy - r, t, r * 1.3F)
+                g.FillEllipse(brW, cx - t * 0.7F, cy + r * 0.45F, t * 1.4F, t * 1.4F)
+            Case PowerUpType.GreenMultiBall ' three data nodes
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.7F
+                    g.FillRectangle(brW, cx + ox - t / 2, cy - r * 0.3F, t, r * 0.6F)
+                    g.FillEllipse(brW, cx + ox - t * 0.8F, cy - r * 0.5F, t * 1.6F, t * 1.6F)
+                Next
+            Case PowerUpType.YellowBallShrink ' minus/delete line
+                g.FillRectangle(brW, cx - r, cy - t / 2, r * 2, t)
+            Case PowerUpType.PurplePaddleMega ' wide chip
+                Using rr = RoundedRect(New RectangleF(cx - r, cy - r * 0.28F, r * 2, r * 0.56F), 3)
+                    g.FillPath(brW, rr)
+                End Using
+                For i = -1 To 1
+                    g.FillRectangle(brW, cx + i * r * 0.5F - t / 2, cy + r * 0.28F, t, r * 0.4F)
+                Next
+            Case PowerUpType.OrangeBallSlow ' wifi/signal arcs
+                Using pen As New Pen(brW.Color, t)
+                    For k = 1 To 3
+                        g.DrawArc(pen, cx - k * r * 0.32F, cy - k * r * 0.32F, k * r * 0.64F, k * r * 0.64F, 200, 140)
+                    Next
+                End Using
+            Case PowerUpType.PinkBallFast ' lightning bolt
+                Dim lpts() As PointF = {
+                    New PointF(cx + r * 0.2F, cy - r),
+                    New PointF(cx - r * 0.15F, cy - r * 0.1F),
+                    New PointF(cx + r * 0.3F, cy - r * 0.1F),
+                    New PointF(cx - r * 0.25F, cy + r)
+                }
+                g.FillPolygon(brW, lpts)
+        End Select
+    End Sub
+
+    Private Sub DrawMedievalIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' sword (vertical + crossguard)
+                g.FillRectangle(brW, cx - r * 0.12F, cy - r, r * 0.24F, r * 1.8F)
+                g.FillRectangle(brW, cx - r * 0.65F, cy + r * 0.1F, r * 1.3F, r * 0.22F)
+            Case PowerUpType.RedBallShrink ' potion bottle
+                Using rr = RoundedRect(New RectangleF(cx - r * 0.42F, cy - r * 0.1F, r * 0.84F, r), 5)
+                    g.FillPath(brW, rr)
+                End Using
+                g.FillRectangle(brW, cx - r * 0.2F, cy - r * 0.6F, r * 0.4F, r * 0.55F)
+            Case PowerUpType.GreenMultiBall ' three small shields
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.7F
+                    Dim spts() As PointF = {
+                        New PointF(cx + ox - r * 0.24F, cy - r * 0.4F),
+                        New PointF(cx + ox + r * 0.24F, cy - r * 0.4F),
+                        New PointF(cx + ox + r * 0.24F, cy + r * 0.1F),
+                        New PointF(cx + ox, cy + r * 0.4F),
+                        New PointF(cx + ox - r * 0.24F, cy + r * 0.1F)
+                    }
+                    g.FillPolygon(brW, spts)
+                Next
+            Case PowerUpType.YellowBallShrink ' rune dash
+                g.FillRectangle(brW, cx - r, cy - r * 0.14F, r * 2, r * 0.28F)
+                g.FillRectangle(brW, cx - r * 0.14F, cy - r, r * 0.28F, r * 2)
+            Case PowerUpType.PurplePaddleMega ' long shield
+                Dim spts2() As PointF = {
+                    New PointF(cx - r, cy - r * 0.6F),
+                    New PointF(cx + r, cy - r * 0.6F),
+                    New PointF(cx + r, cy + r * 0.2F),
+                    New PointF(cx, cy + r * 0.7F),
+                    New PointF(cx - r, cy + r * 0.2F)
+                }
+                g.FillPolygon(brW, spts2)
+            Case PowerUpType.OrangeBallSlow ' hourglass
+                Dim hpts() As PointF = {
+                    New PointF(cx - r * 0.65F, cy - r), New PointF(cx + r * 0.65F, cy - r),
+                    New PointF(cx + r * 0.15F, cy), New PointF(cx + r * 0.65F, cy + r),
+                    New PointF(cx - r * 0.65F, cy + r), New PointF(cx - r * 0.15F, cy)
+                }
+                g.FillPolygon(brW, hpts)
+            Case PowerUpType.PinkBallFast ' crown
+                Dim cpts() As PointF = {
+                    New PointF(cx - r, cy + r * 0.4F),
+                    New PointF(cx - r, cy - r * 0.4F),
+                    New PointF(cx - r * 0.35F, cy + r * 0.1F),
+                    New PointF(cx, cy - r),
+                    New PointF(cx + r * 0.35F, cy + r * 0.1F),
+                    New PointF(cx + r, cy - r * 0.4F),
+                    New PointF(cx + r, cy + r * 0.4F)
+                }
+                g.FillPolygon(brW, cpts)
+        End Select
+    End Sub
+
+    Private Sub DrawOceanIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' bubble with + 
+                Using pen As New Pen(brW.Color, r * 0.18F)
+                    g.DrawEllipse(pen, cx - r * 0.75F, cy - r * 0.75F, r * 1.5F, r * 1.5F)
+                End Using
+                g.FillRectangle(brW, cx - r * 0.12F, cy - r * 0.55F, r * 0.24F, r * 1.1F)
+                g.FillRectangle(brW, cx - r * 0.55F, cy - r * 0.12F, r * 1.1F, r * 0.24F)
+            Case PowerUpType.RedBallShrink ' coral heart
+                DrawHeartShape(g, cx - r, cy - r * 0.9F, r * 2, r * 2, Color.FromArgb(220, 255, 120, 140))
+            Case PowerUpType.GreenMultiBall ' three bubbles
+                Dim sizes() As Single = {0.4F, 0.5F, 0.35F}
+                Dim offsets() As Single = {-0.7F, 0.0F, 0.7F}
+                For i = 0 To 2
+                    Dim sr = r * sizes(i)
+                    Using pen As New Pen(brW.Color, r * 0.14F)
+                        g.DrawEllipse(pen, cx + offsets(i) * r - sr, cy - sr, sr * 2, sr * 2)
+                    End Using
+                Next
+            Case PowerUpType.YellowBallShrink ' anchor
+                Using pen As New Pen(brW.Color, r * 0.2F)
+                    g.DrawLine(pen, cx, cy - r, cx, cy + r)
+                    g.DrawLine(pen, cx - r * 0.65F, cy - r * 0.5F, cx + r * 0.65F, cy - r * 0.5F)
+                    g.DrawArc(pen, cx - r * 0.65F, cy + r * 0.1F, r * 1.3F, r * 0.9F, 0, 180)
+                End Using
+            Case PowerUpType.PurplePaddleMega ' wave bar
+                Dim wpts() As PointF = {
+                    New PointF(cx - r, cy),
+                    New PointF(cx - r * 0.5F, cy - r * 0.35F),
+                    New PointF(cx, cy),
+                    New PointF(cx + r * 0.5F, cy + r * 0.35F),
+                    New PointF(cx + r, cy)
+                }
+                Using pen As New Pen(brW.Color, r * 0.25F)
+                    g.DrawLines(pen, wpts)
+                End Using
+            Case PowerUpType.OrangeBallSlow ' starfish
+                For i = 0 To 4
+                    Dim ang5 = (i * 72 - 90) * Math.PI / 180.0
+                    Using pen As New Pen(brW.Color, r * 0.2F)
+                        g.DrawLine(pen, cx, cy, cx + CSng(Math.Cos(ang5) * r), cy + CSng(Math.Sin(ang5) * r))
+                    End Using
+                Next
+            Case PowerUpType.PinkBallFast ' fish arrow
+                Dim fpts() As PointF = {
+                    New PointF(cx + r, cy),
+                    New PointF(cx - r * 0.2F, cy - r * 0.6F),
+                    New PointF(cx - r * 0.2F, cy + r * 0.6F)
+                }
+                g.FillPolygon(brW, fpts)
+                Dim tpts() As PointF = {
+                    New PointF(cx - r * 0.2F, cy - r * 0.5F),
+                    New PointF(cx - r, cy - r * 0.7F),
+                    New PointF(cx - r, cy + r * 0.7F),
+                    New PointF(cx - r * 0.2F, cy + r * 0.5F)
+                }
+                g.FillPolygon(brW, tpts)
+        End Select
+    End Sub
+
+    Private Sub DrawRetroIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Dim ps = r * 0.32F ' pixel size
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' pixelated +
+                g.FillRectangle(brW, cx - ps / 2, cy - r, ps, r * 2)
+                g.FillRectangle(brW, cx - r, cy - ps / 2, r * 2, ps)
+            Case PowerUpType.RedBallShrink ' pixel heart (3x3 grid)
+                Dim hmap(,) As Integer = {{0, 1, 0, 1, 0}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}}
+                Dim scale = r * 0.38F
+                For row = 0 To 4
+                    For col = 0 To 4
+                        If hmap(row, col) = 1 Then
+                            g.FillRectangle(brW, cx - 2.5F * scale + col * scale, cy - 2.5F * scale + row * scale, scale - 1, scale - 1)
+                        End If
+                    Next
+                Next
+            Case PowerUpType.GreenMultiBall ' three pixel coins
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.7F
+                    g.FillRectangle(brW, cx + ox - ps / 2, cy - ps, ps, ps * 2)
+                    g.FillRectangle(brW, cx + ox - ps, cy - ps / 2, ps * 2, ps)
+                Next
+            Case PowerUpType.YellowBallShrink ' minus pixel
+                g.FillRectangle(brW, cx - r, cy - ps / 2, r * 2, ps)
+            Case PowerUpType.PurplePaddleMega ' pixel paddle block
+                g.FillRectangle(brW, cx - r, cy - ps, r * 2, ps * 2)
+            Case PowerUpType.OrangeBallSlow ' hourglass pixels
+                For row = 0 To 4
+                    Dim wid = Math.Abs(row - 2) * ps + ps / 2
+                    g.FillRectangle(brW, cx - wid / 2, cy - r + row * r * 0.44F, wid, ps)
+                Next
+            Case PowerUpType.PinkBallFast ' pixel up arrow
+                For row = 0 To 4
+                    Dim wid = (row + 1) * ps
+                    g.FillRectangle(brW, cx - wid / 2, cy + r * 0.6F - row * r * 0.44F, wid, ps)
+                Next
+        End Select
+    End Sub
+
+    Private Sub DrawMagicIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' wand with star tip
+                Using pen As New Pen(brW.Color, r * 0.2F)
+                    g.DrawLine(pen, cx - r * 0.6F, cy + r * 0.6F, cx + r * 0.5F, cy - r * 0.5F)
+                End Using
+                Dim stpts3(9) As PointF
+                For i = 0 To 9
+                    Dim ang6 = (i * 36 - 90) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r * 0.42F, r * 0.18F)
+                    stpts3(i) = New PointF(cx + r * 0.5F + CSng(Math.Cos(ang6) * rad), cy - r * 0.5F + CSng(Math.Sin(ang6) * rad))
+                Next
+                g.FillPolygon(brW, stpts3)
+            Case PowerUpType.RedBallShrink ' orb (bright circle)
+                g.FillEllipse(brW, cx - r * 0.65F, cy - r * 0.65F, r * 1.3F, r * 1.3F)
+                Using brGlow As New SolidBrush(Color.FromArgb(140, 255, 200, 255))
+                    g.FillEllipse(brGlow, cx - r * 0.3F, cy - r * 0.55F, r * 0.4F, r * 0.35F)
+                End Using
+            Case PowerUpType.GreenMultiBall ' three sparkle stars
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.72F
+                    Dim stpts4(7) As PointF
+                    For k = 0 To 7
+                        Dim ang7 = (k * 45 - 90) * Math.PI / 180.0
+                        Dim rad = If(k Mod 2 = 0, r * 0.28F, r * 0.11F)
+                        stpts4(k) = New PointF(cx + ox + CSng(Math.Cos(ang7) * rad), cy + CSng(Math.Sin(ang7) * rad))
+                    Next
+                    g.FillPolygon(brW, stpts4)
+                Next
+            Case PowerUpType.YellowBallShrink ' minus rune
+                g.FillRectangle(brW, cx - r, cy - r * 0.14F, r * 2, r * 0.28F)
+                Using pen As New Pen(brW.Color, r * 0.15F)
+                    g.DrawEllipse(pen, cx - r * 0.5F, cy - r * 0.5F, r, r)
+                End Using
+            Case PowerUpType.PurplePaddleMega ' large spell scroll
+                Using rr = RoundedRect(New RectangleF(cx - r, cy - r * 0.32F, r * 2, r * 0.64F), 5)
+                    g.FillPath(brW, rr)
+                End Using
+                g.FillEllipse(brW, cx - r * 1.05F, cy - r * 0.4F, r * 0.4F, r * 0.8F)
+                g.FillEllipse(brW, cx + r * 0.65F, cy - r * 0.4F, r * 0.4F, r * 0.8F)
+            Case PowerUpType.OrangeBallSlow ' hourglass with sparkle
+                Dim hpts2() As PointF = {
+                    New PointF(cx - r * 0.6F, cy - r), New PointF(cx + r * 0.6F, cy - r),
+                    New PointF(cx + r * 0.12F, cy), New PointF(cx + r * 0.6F, cy + r),
+                    New PointF(cx - r * 0.6F, cy + r), New PointF(cx - r * 0.12F, cy)
+                }
+                g.FillPolygon(brW, hpts2)
+            Case PowerUpType.PinkBallFast ' shooting star
+                Dim stpts5(9) As PointF
+                For i = 0 To 9
+                    Dim ang8 = (i * 36 - 90) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r * 0.9F, r * 0.38F)
+                    stpts5(i) = New PointF(cx + CSng(Math.Cos(ang8) * rad), cy + CSng(Math.Sin(ang8) * rad))
+                Next
+                g.FillPolygon(brW, stpts5)
+                Using pen As New Pen(brW.Color, r * 0.14F)
+                    g.DrawLine(pen, cx + r * 0.6F, cy + r * 0.4F, cx + r * 1.6F, cy + r * 1.0F)
+                End Using
+        End Select
+    End Sub
+
+    Private Sub DrawDragonIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' dragon egg (oval)
+                g.FillEllipse(brW, cx - r * 0.6F, cy - r, r * 1.2F, r * 2)
+                Using brS As New SolidBrush(Color.FromArgb(80, 0, 100, 200))
+                    For row = 0 To 2
+                        For col = 0 To 2
+                            Dim ex = cx - r * 0.4F + col * r * 0.4F
+                            Dim ey = cy - r * 0.5F + row * r * 0.5F
+                            g.FillEllipse(brS, ex, ey, r * 0.3F, r * 0.25F)
+                        Next
+                    Next
+                End Using
+            Case PowerUpType.RedBallShrink ' flame (teardrop)
+                Dim fpts2() As PointF = {
+                    New PointF(cx, cy - r),
+                    New PointF(cx + r * 0.55F, cy + r * 0.3F),
+                    New PointF(cx, cy + r * 0.6F),
+                    New PointF(cx - r * 0.55F, cy + r * 0.3F)
+                }
+                Using brFire As New SolidBrush(Color.FromArgb(220, 255, 140, 0))
+                    g.FillPolygon(brFire, fpts2)
+                End Using
+                g.FillEllipse(brW, cx - r * 0.2F, cy - r * 0.4F, r * 0.4F, r * 0.4F)
+            Case PowerUpType.GreenMultiBall ' claw marks (3 lines)
+                Using pen As New Pen(brW.Color, r * 0.22F)
+                    For i = -1 To 1
+                        g.DrawLine(pen, cx + i * r * 0.45F, cy - r, cx + i * r * 0.45F + r * 0.3F, cy + r)
+                    Next
+                End Using
+            Case PowerUpType.YellowBallShrink ' scale diamond
+                Dim dpts2() As PointF = {
+                    New PointF(cx, cy - r), New PointF(cx + r * 0.6F, cy),
+                    New PointF(cx, cy + r), New PointF(cx - r * 0.6F, cy)
+                }
+                g.FillPolygon(brW, dpts2)
+            Case PowerUpType.PurplePaddleMega ' wing spread
+                Dim wl() As PointF = {New PointF(cx, cy), New PointF(cx - r * 0.6F, cy - r), New PointF(cx - r, cy), New PointF(cx - r * 0.5F, cy + r * 0.5F)}
+                Dim wr() As PointF = {New PointF(cx, cy), New PointF(cx + r * 0.6F, cy - r), New PointF(cx + r, cy), New PointF(cx + r * 0.5F, cy + r * 0.5F)}
+                g.FillPolygon(brW, wl)
+                g.FillPolygon(brW, wr)
+            Case PowerUpType.OrangeBallSlow ' lava bubble
+                Using brLav As New SolidBrush(Color.FromArgb(200, 255, 80, 0))
+                    g.FillEllipse(brLav, cx - r * 0.7F, cy - r * 0.7F, r * 1.4F, r * 1.4F)
+                End Using
+                g.FillEllipse(brW, cx - r * 0.25F, cy - r * 0.55F, r * 0.3F, r * 0.3F)
+            Case PowerUpType.PinkBallFast ' dragon claw arrow
+                Dim cpts2() As PointF = {
+                    New PointF(cx, cy - r),
+                    New PointF(cx + r * 0.4F, cy),
+                    New PointF(cx + r * 0.2F, cy + r * 0.2F),
+                    New PointF(cx, cy - r * 0.2F),
+                    New PointF(cx - r * 0.2F, cy + r * 0.2F),
+                    New PointF(cx - r * 0.4F, cy)
+                }
+                g.FillPolygon(brW, cpts2)
+        End Select
+    End Sub
+
+    Private Sub DrawSakuraIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' 5-petal flower
+                For i = 0 To 4
+                    Dim ang9 = (i * 72 - 90) * Math.PI / 180.0
+                    Dim px2 = cx + CSng(Math.Cos(ang9) * r * 0.55F)
+                    Dim py2 = cy + CSng(Math.Sin(ang9) * r * 0.55F)
+                    g.FillEllipse(brW, px2 - r * 0.35F, py2 - r * 0.35F, r * 0.7F, r * 0.7F)
+                Next
+                g.FillEllipse(brW, cx - r * 0.28F, cy - r * 0.28F, r * 0.56F, r * 0.56F)
+            Case PowerUpType.RedBallShrink ' heart petal
+                DrawHeartShape(g, cx - r, cy - r * 0.9F, r * 2, r * 2, Color.FromArgb(240, 255, 150, 180))
+            Case PowerUpType.GreenMultiBall ' three petals
+                For i = 0 To 2
+                    Dim ang10 = (i * 120 - 90) * Math.PI / 180.0
+                    Dim px3 = cx + CSng(Math.Cos(ang10) * r * 0.5F)
+                    Dim py3 = cy + CSng(Math.Sin(ang10) * r * 0.5F)
+                    g.FillEllipse(brW, px3 - r * 0.38F, py3 - r * 0.38F, r * 0.76F, r * 0.76F)
+                Next
+            Case PowerUpType.YellowBallShrink ' fan (wedge lines)
+                Using pen As New Pen(brW.Color, r * 0.16F)
+                    For i = -2 To 2
+                        Dim ang11 = (i * 22 + 90) * Math.PI / 180.0
+                        g.DrawLine(pen, cx, cy, cx + CSng(Math.Cos(ang11) * r), cy - CSng(Math.Sin(ang11) * r))
+                    Next
+                End Using
+            Case PowerUpType.PurplePaddleMega ' branch (horizontal + petals)
+                Using pen As New Pen(brW.Color, r * 0.18F)
+                    g.DrawLine(pen, cx - r, cy, cx + r, cy)
+                    g.DrawLine(pen, cx - r * 0.4F, cy, cx - r * 0.4F, cy - r * 0.6F)
+                    g.DrawLine(pen, cx + r * 0.4F, cy, cx + r * 0.4F, cy - r * 0.6F)
+                End Using
+                g.FillEllipse(brW, cx - r * 0.7F, cy - r * 0.5F, r * 0.44F, r * 0.44F)
+                g.FillEllipse(brW, cx + r * 0.24F, cy - r * 0.5F, r * 0.44F, r * 0.44F)
+            Case PowerUpType.OrangeBallSlow ' leaf
+                Dim lpts2() As PointF = {
+                    New PointF(cx, cy - r),
+                    New PointF(cx + r * 0.55F, cy),
+                    New PointF(cx, cy + r),
+                    New PointF(cx - r * 0.55F, cy)
+                }
+                g.FillPolygon(brW, lpts2)
+                Using pen As New Pen(Color.FromArgb(120, 80, 60, 0), r * 0.12F)
+                    g.DrawLine(pen, cx, cy - r, cx, cy + r)
+                End Using
+            Case PowerUpType.PinkBallFast ' spinning petal burst
+                Dim stpts6(9) As PointF
+                For i = 0 To 9
+                    Dim ang12 = (i * 36 + _frameCount * 3) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r * 0.9F, r * 0.4F)
+                    stpts6(i) = New PointF(cx + CSng(Math.Cos(ang12) * rad), cy + CSng(Math.Sin(ang12) * rad))
+                Next
+                g.FillPolygon(brW, stpts6)
+        End Select
+    End Sub
+
+    Private Sub DrawRobotIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Dim t = r * 0.22F
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' gear (ring + teeth)
+                Using pen As New Pen(brW.Color, t)
+                    g.DrawEllipse(pen, cx - r * 0.6F, cy - r * 0.6F, r * 1.2F, r * 1.2F)
+                End Using
+                For i = 0 To 7
+                    Dim ang13 = i * 45 * Math.PI / 180.0
+                    g.FillRectangle(brW, cx + CSng(Math.Cos(ang13) * r * 0.6F) - t / 2, cy + CSng(Math.Sin(ang13) * r * 0.6F) - t / 2, t, t)
+                Next
+            Case PowerUpType.RedBallShrink ' eye (circle + dot)
+                Using pen As New Pen(brW.Color, t * 0.8F)
+                    g.DrawEllipse(pen, cx - r * 0.65F, cy - r * 0.35F, r * 1.3F, r * 0.7F)
+                End Using
+                g.FillEllipse(brW, cx - r * 0.2F, cy - r * 0.2F, r * 0.4F, r * 0.4F)
+            Case PowerUpType.GreenMultiBall ' three cpu nodes
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.72F
+                    Using rr = RoundedRect(New RectangleF(cx + ox - r * 0.28F, cy - r * 0.28F, r * 0.56F, r * 0.56F), 2)
+                        g.FillPath(brW, rr)
+                    End Using
+                Next
+                Using pen As New Pen(brW.Color, t * 0.7F)
+                    g.DrawLine(pen, cx - r * 0.7F, cy, cx + r * 0.7F, cy)
+                End Using
+            Case PowerUpType.YellowBallShrink ' bolt
+                g.FillRectangle(brW, cx - r, cy - t / 2, r * 2, t)
+            Case PowerUpType.PurplePaddleMega ' chassis bar with bolts
+                g.FillRectangle(brW, cx - r, cy - t, r * 2, t * 2)
+                For i = -1 To 1
+                    g.FillEllipse(brW, cx + i * r * 0.65F - t * 0.6F, cy - t * 1.4F, t * 1.2F, t * 1.2F)
+                Next
+            Case PowerUpType.OrangeBallSlow ' gear slow (ring only + teeth)
+                Using pen As New Pen(brW.Color, t * 0.7F)
+                    g.DrawEllipse(pen, cx - r * 0.55F, cy - r * 0.55F, r * 1.1F, r * 1.1F)
+                End Using
+                For i = 0 To 5
+                    Dim ang14 = i * 60 * Math.PI / 180.0
+                    Using pen As New Pen(brW.Color, t)
+                        g.DrawLine(pen,
+                            cx + CSng(Math.Cos(ang14) * r * 0.55F), cy + CSng(Math.Sin(ang14) * r * 0.55F),
+                            cx + CSng(Math.Cos(ang14) * r * 0.9F), cy + CSng(Math.Sin(ang14) * r * 0.9F))
+                    End Using
+                Next
+            Case PowerUpType.PinkBallFast ' lightning bolt
+                Dim lpts2() As PointF = {
+                    New PointF(cx + r * 0.18F, cy - r),
+                    New PointF(cx - r * 0.12F, cy - r * 0.1F),
+                    New PointF(cx + r * 0.28F, cy - r * 0.1F),
+                    New PointF(cx - r * 0.22F, cy + r)
+                }
+                g.FillPolygon(brW, lpts2)
+        End Select
+    End Sub
+
+    Private Sub DrawPirateIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' treasure chest
+                Using rr = RoundedRect(New RectangleF(cx - r, cy - r * 0.4F, r * 2, r * 1.0F), 3)
+                    g.FillPath(brW, rr)
+                End Using
+                Using brD As New SolidBrush(Color.FromArgb(150, 100, 60, 0))
+                    g.FillRectangle(brD, cx - r, cy - r * 0.4F, r * 2, r * 0.2F)
+                End Using
+                Using brK As New SolidBrush(Color.FromArgb(200, 255, 200, 0))
+                    g.FillEllipse(brK, cx - r * 0.18F, cy - r * 0.1F, r * 0.36F, r * 0.36F)
+                End Using
+            Case PowerUpType.RedBallShrink ' skull
+                g.FillEllipse(brW, cx - r * 0.6F, cy - r, r * 1.2F, r * 1.1F)
+                Using brD As New SolidBrush(Color.FromArgb(200, 40, 20, 40))
+                    g.FillEllipse(brD, cx - r * 0.38F, cy - r * 0.6F, r * 0.38F, r * 0.38F)
+                    g.FillEllipse(brD, cx + r * 0.0F, cy - r * 0.6F, r * 0.38F, r * 0.38F)
+                    g.FillRectangle(brD, cx - r * 0.15F, cy, r * 0.3F, r * 0.25F)
+                End Using
+                g.FillRectangle(brW, cx - r * 0.4F, cy + r * 0.12F, r * 0.2F, r * 0.25F)
+                g.FillRectangle(brW, cx + r * 0.2F, cy + r * 0.12F, r * 0.2F, r * 0.25F)
+            Case PowerUpType.GreenMultiBall ' three gold coins
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.7F
+                    Using brG As New SolidBrush(Color.FromArgb(220, 255, 200, 0))
+                        g.FillEllipse(brG, cx + ox - r * 0.32F, cy - r * 0.32F, r * 0.64F, r * 0.64F)
+                    End Using
+                    Using pen As New Pen(Color.FromArgb(180, 200, 140, 0), r * 0.1F)
+                        g.DrawEllipse(pen, cx + ox - r * 0.32F, cy - r * 0.32F, r * 0.64F, r * 0.64F)
+                    End Using
+                Next
+            Case PowerUpType.YellowBallShrink ' anchor (reuse ocean)
+                Using pen As New Pen(brW.Color, r * 0.2F)
+                    g.DrawLine(pen, cx, cy - r, cx, cy + r)
+                    g.DrawLine(pen, cx - r * 0.65F, cy - r * 0.5F, cx + r * 0.65F, cy - r * 0.5F)
+                    g.DrawArc(pen, cx - r * 0.65F, cy + r * 0.1F, r * 1.3F, r * 0.9F, 0, 180)
+                End Using
+            Case PowerUpType.PurplePaddleMega ' jolly roger flag bar
+                g.FillRectangle(brW, cx - r, cy - r * 0.18F, r * 2, r * 0.36F)
+                Using pen As New Pen(brW.Color, r * 0.16F)
+                    g.DrawLine(pen, cx - r * 0.5F, cy - r * 0.6F, cx + r * 0.5F, cy + r * 0.6F)
+                    g.DrawLine(pen, cx + r * 0.5F, cy - r * 0.6F, cx - r * 0.5F, cy + r * 0.6F)
+                End Using
+            Case PowerUpType.OrangeBallSlow ' cannon ball
+                Using pen As New Pen(brW.Color, r * 0.2F)
+                    g.DrawEllipse(pen, cx - r * 0.65F, cy - r * 0.65F, r * 1.3F, r * 1.3F)
+                End Using
+                g.FillEllipse(brW, cx - r * 0.18F, cy - r * 0.5F, r * 0.3F, r * 0.3F)
+            Case PowerUpType.PinkBallFast ' hook
+                Using pen As New Pen(brW.Color, r * 0.22F)
+                    g.DrawArc(pen, cx - r * 0.6F, cy - r * 0.6F, r * 1.2F, r * 1.2F, 20, 300)
+                End Using
+                Dim hkpts() As PointF = {
+                    New PointF(cx + r * 0.5F, cy + r * 0.5F),
+                    New PointF(cx + r * 0.95F, cy + r * 0.15F),
+                    New PointF(cx + r * 0.7F, cy + r * 0.5F)
+                }
+                g.FillPolygon(brW, hkpts)
+        End Select
+    End Sub
+
+    Private Sub DrawGalaxyIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' supernova burst (multi-ray star)
+                Dim stpts7(11) As PointF
+                For i = 0 To 11
+                    Dim ang15 = (i * 30 - 90) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r, r * 0.35F)
+                    stpts7(i) = New PointF(cx + CSng(Math.Cos(ang15) * rad), cy + CSng(Math.Sin(ang15) * rad))
+                Next
+                g.FillPolygon(brW, stpts7)
+            Case PowerUpType.RedBallShrink ' pulsar rings
+                For k = 1 To 3
+                    Using pen As New Pen(Color.FromArgb(220 - k * 50, 255, 255, 255), r * 0.15F)
+                        g.DrawEllipse(pen, cx - k * r * 0.3F, cy - k * r * 0.3F, k * r * 0.6F, k * r * 0.6F)
+                    End Using
+                Next
+            Case PowerUpType.GreenMultiBall ' three mini nebulae
+                Dim nc() As Color = {Color.FromArgb(200, 0, 200, 160), Color.FromArgb(200, 100, 0, 200), Color.FromArgb(200, 0, 160, 200)}
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.72F
+                    Using gbr As New SolidBrush(nc(i))
+                        g.FillEllipse(gbr, cx + ox - r * 0.38F, cy - r * 0.38F, r * 0.76F, r * 0.76F)
+                    End Using
+                Next
+            Case PowerUpType.YellowBallShrink ' solar flare minus
+                g.FillRectangle(brW, cx - r, cy - r * 0.14F, r * 2, r * 0.28F)
+                For i = -1 To 1 Step 2
+                    g.FillEllipse(brW, cx + i * r * 0.9F - r * 0.2F, cy - r * 0.2F, r * 0.4F, r * 0.4F)
+                Next
+            Case PowerUpType.PurplePaddleMega ' wormhole oval
+                Using pen As New Pen(brW.Color, r * 0.18F)
+                    g.DrawEllipse(pen, cx - r, cy - r * 0.4F, r * 2, r * 0.8F)
+                End Using
+                For k = 1 To 2
+                    Using pen As New Pen(Color.FromArgb(120, 255, 255, 255), r * 0.1F)
+                        g.DrawEllipse(pen, cx - r * 0.6F * k, cy - r * 0.24F * k, r * 1.2F * k, r * 0.48F * k)
+                    End Using
+                Next
+            Case PowerUpType.OrangeBallSlow ' comet with tail
+                g.FillEllipse(brW, cx + r * 0.2F, cy - r * 0.4F, r * 0.6F, r * 0.6F)
+                Dim tpts2() As PointF = {
+                    New PointF(cx + r * 0.2F, cy - r * 0.2F),
+                    New PointF(cx - r, cy + r * 0.8F),
+                    New PointF(cx + r * 0.2F, cy + r * 0.2F)
+                }
+                g.FillPolygon(brW, tpts2)
+            Case PowerUpType.PinkBallFast ' hyperdrive arrow
+                Dim pts3() As PointF = {
+                    New PointF(cx + r, cy),
+                    New PointF(cx, cy - r * 0.6F),
+                    New PointF(cx - r * 0.2F, cy - r * 0.2F),
+                    New PointF(cx - r, cy - r * 0.2F),
+                    New PointF(cx - r, cy + r * 0.2F),
+                    New PointF(cx - r * 0.2F, cy + r * 0.2F),
+                    New PointF(cx, cy + r * 0.6F)
+                }
+                g.FillPolygon(brW, pts3)
+        End Select
+    End Sub
+
+    Private Sub DrawFestivalIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' firework burst
+                For i = 0 To 7
+                    Dim ang16 = i * 45 * Math.PI / 180.0
+                    Using pen As New Pen(brW.Color, r * 0.18F)
+                        g.DrawLine(pen, cx, cy, cx + CSng(Math.Cos(ang16) * r), cy + CSng(Math.Sin(ang16) * r))
+                    End Using
+                Next
+                g.FillEllipse(brW, cx - r * 0.22F, cy - r * 0.22F, r * 0.44F, r * 0.44F)
+            Case PowerUpType.RedBallShrink ' heart confetti
+                DrawHeartShape(g, cx - r, cy - r * 0.9F, r * 2, r * 2, Color.FromArgb(240, 255, 80, 120))
+            Case PowerUpType.GreenMultiBall ' three confetti squares
+                Dim cc2() As Color = {Color.FromArgb(220, 100, 255, 80), Color.FromArgb(220, 255, 80, 120), Color.FromArgb(220, 80, 160, 255)}
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.72F
+                    Using gbr As New SolidBrush(cc2(i))
+                        Dim rot = (i - 1) * 25.0F
+                        Dim state = g.Save()
+                        g.TranslateTransform(cx + ox, cy)
+                        g.RotateTransform(rot)
+                        g.FillRectangle(gbr, -r * 0.28F, -r * 0.28F, r * 0.56F, r * 0.56F)
+                        g.Restore(state)
+                    End Using
+                Next
+            Case PowerUpType.YellowBallShrink ' star sparkle
+                Dim stpts8(9) As PointF
+                For i = 0 To 9
+                    Dim ang17 = (i * 36 - 90) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r * 0.9F, r * 0.38F)
+                    stpts8(i) = New PointF(cx + CSng(Math.Cos(ang17) * rad), cy + CSng(Math.Sin(ang17) * rad))
+                Next
+                g.FillPolygon(brW, stpts8)
+            Case PowerUpType.PurplePaddleMega ' party banner
+                Using pen As New Pen(brW.Color, r * 0.18F)
+                    g.DrawLine(pen, cx - r, cy - r * 0.3F, cx + r, cy - r * 0.3F)
+                End Using
+                For i = 0 To 4
+                    Dim tx = cx - r + i * r * 0.5F
+                    Dim tpts3() As PointF = {New PointF(tx, cy - r * 0.3F), New PointF(tx + r * 0.25F, cy + r * 0.5F), New PointF(tx - r * 0.0F, cy + r * 0.5F)}
+                    Using gbr As New SolidBrush(Color.FromArgb(200, 255, 200, 50 + i * 40))
+                        g.FillPolygon(gbr, tpts3)
+                    End Using
+                Next
+            Case PowerUpType.OrangeBallSlow ' lantern
+                Using rr = RoundedRect(New RectangleF(cx - r * 0.5F, cy - r * 0.7F, r, r * 1.2F), 6)
+                    g.FillPath(brW, rr)
+                End Using
+                Using brG As New SolidBrush(Color.FromArgb(180, 255, 200, 0))
+                    g.FillEllipse(brG, cx - r * 0.28F, cy - r * 0.4F, r * 0.56F, r * 0.56F)
+                End Using
+                Using pen As New Pen(brW.Color, r * 0.12F)
+                    g.DrawLine(pen, cx, cy - r * 0.7F, cx, cy - r)
+                End Using
+            Case PowerUpType.PinkBallFast ' ribbon star
+                Dim stpts9(9) As PointF
+                For i = 0 To 9
+                    Dim ang18 = (i * 36 - 90 + _frameCount * 2) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r, r * 0.42F)
+                    stpts9(i) = New PointF(cx + CSng(Math.Cos(ang18) * rad), cy + CSng(Math.Sin(ang18) * rad))
+                Next
+                g.FillPolygon(brW, stpts9)
+        End Select
+    End Sub
+
+    Private Sub DrawHorrorIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' bat wings
+                Dim wl2() As PointF = {New PointF(cx, cy), New PointF(cx - r * 0.4F, cy - r), New PointF(cx - r, cy - r * 0.5F), New PointF(cx - r, cy + r * 0.2F)}
+                Dim wr2() As PointF = {New PointF(cx, cy), New PointF(cx + r * 0.4F, cy - r), New PointF(cx + r, cy - r * 0.5F), New PointF(cx + r, cy + r * 0.2F)}
+                g.FillPolygon(brW, wl2) : g.FillPolygon(brW, wr2)
+            Case PowerUpType.RedBallShrink ' blood drip
+                g.FillEllipse(brW, cx - r * 0.5F, cy - r * 0.7F, r, r)
+                Dim dpts3() As PointF = {New PointF(cx - r * 0.25F, cy - r * 0.2F), New PointF(cx + r * 0.25F, cy - r * 0.2F), New PointF(cx, cy + r)}
+                g.FillPolygon(brW, dpts3)
+            Case PowerUpType.GreenMultiBall ' three slime blobs
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.7F
+                    Dim spts3() As PointF = {
+                        New PointF(cx + ox, cy - r * 0.4F),
+                        New PointF(cx + ox + r * 0.32F, cy),
+                        New PointF(cx + ox + r * 0.22F, cy + r * 0.4F),
+                        New PointF(cx + ox - r * 0.22F, cy + r * 0.4F),
+                        New PointF(cx + ox - r * 0.32F, cy)
+                    }
+                    g.FillPolygon(brW, spts3)
+                Next
+            Case PowerUpType.YellowBallShrink ' ghost minus
+                g.FillRectangle(brW, cx - r, cy - r * 0.14F, r * 2, r * 0.28F)
+                Using pen As New Pen(brW.Color, r * 0.14F)
+                    g.DrawLine(pen, cx - r * 0.5F, cy - r * 0.6F, cx - r * 0.5F, cy - r * 0.1F)
+                    g.DrawLine(pen, cx + r * 0.5F, cy - r * 0.6F, cx + r * 0.5F, cy - r * 0.1F)
+                End Using
+            Case PowerUpType.PurplePaddleMega ' coffin lid
+                Dim cpts3() As PointF = {
+                    New PointF(cx - r * 0.6F, cy - r),
+                    New PointF(cx + r * 0.6F, cy - r),
+                    New PointF(cx + r, cy - r * 0.3F),
+                    New PointF(cx + r, cy + r * 0.8F),
+                    New PointF(cx - r, cy + r * 0.8F),
+                    New PointF(cx - r, cy - r * 0.3F)
+                }
+                g.FillPolygon(brW, cpts3)
+            Case PowerUpType.OrangeBallSlow ' pumpkin
+                g.FillEllipse(brW, cx - r * 0.75F, cy - r * 0.7F, r * 1.5F, r * 1.4F)
+                Using brD As New SolidBrush(Color.FromArgb(180, 40, 20, 0))
+                    ' Left eye triangle
+                    Dim lEye() As PointF = {
+                        New PointF(cx - r * 0.4F, cy - r * 0.25F),
+                        New PointF(cx - r * 0.4F + r * 0.28F, cy - r * 0.25F),
+                        New PointF(cx - r * 0.4F + r * 0.14F, cy - r * 0.25F - r * 0.24F)
+                    }
+                    g.FillPolygon(brD, lEye)
+                    ' Right eye triangle
+                    Dim rEye() As PointF = {
+                        New PointF(cx + r * 0.12F, cy - r * 0.25F),
+                        New PointF(cx + r * 0.12F + r * 0.28F, cy - r * 0.25F),
+                        New PointF(cx + r * 0.12F + r * 0.14F, cy - r * 0.25F - r * 0.24F)
+                    }
+                    g.FillPolygon(brD, rEye)
+                    g.FillRectangle(brD, cx - r * 0.28F, cy + r * 0.05F, r * 0.56F, r * 0.25F)
+                End Using
+                Using pen As New Pen(brW.Color, r * 0.14F)
+                    g.DrawLine(pen, cx, cy - r * 0.7F, cx + r * 0.2F, cy - r)
+                End Using
+            Case PowerUpType.PinkBallFast ' ghost
+                g.FillEllipse(brW, cx - r * 0.6F, cy - r, r * 1.2F, r * 1.2F)
+                Dim gpts() As PointF = {
+                    New PointF(cx - r * 0.6F, cy + r * 0.2F),
+                    New PointF(cx - r * 0.6F, cy + r),
+                    New PointF(cx - r * 0.3F, cy + r * 0.7F),
+                    New PointF(cx, cy + r),
+                    New PointF(cx + r * 0.3F, cy + r * 0.7F),
+                    New PointF(cx + r * 0.6F, cy + r),
+                    New PointF(cx + r * 0.6F, cy + r * 0.2F)
+                }
+                g.FillPolygon(brW, gpts)
+                Using brE As New SolidBrush(Color.FromArgb(200, 40, 20, 60))
+                    g.FillEllipse(brE, cx - r * 0.38F, cy - r * 0.4F, r * 0.3F, r * 0.3F)
+                    g.FillEllipse(brE, cx + r * 0.08F, cy - r * 0.4F, r * 0.3F, r * 0.3F)
+                End Using
+        End Select
+    End Sub
+
+    Private Sub DrawGoldenIcon(g As Graphics, pType As PowerUpType, cx As Single, cy As Single, r As Single, brW As SolidBrush)
+        Select Case pType
+            Case PowerUpType.BlueBallGrow ' laurel wreath circle
+                Using pen As New Pen(brW.Color, r * 0.18F)
+                    g.DrawArc(pen, cx - r * 0.8F, cy - r * 0.8F, r * 1.6F, r * 1.6F, 160, 220)
+                    g.DrawArc(pen, cx - r * 0.8F, cy - r * 0.8F, r * 1.6F, r * 1.6F, -20, -220)
+                End Using
+                Dim stpts10(9) As PointF
+                For i = 0 To 9
+                    Dim ang19 = (i * 36 - 90) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r * 0.4F, r * 0.18F)
+                    stpts10(i) = New PointF(cx + CSng(Math.Cos(ang19) * rad), cy + CSng(Math.Sin(ang19) * rad))
+                Next
+                g.FillPolygon(brW, stpts10)
+            Case PowerUpType.RedBallShrink ' coin with plus
+                Using pen As New Pen(brW.Color, r * 0.18F)
+                    g.DrawEllipse(pen, cx - r * 0.7F, cy - r * 0.7F, r * 1.4F, r * 1.4F)
+                End Using
+                g.FillRectangle(brW, cx - r * 0.1F, cy - r * 0.5F, r * 0.2F, r)
+                g.FillRectangle(brW, cx - r * 0.5F, cy - r * 0.1F, r, r * 0.2F)
+            Case PowerUpType.GreenMultiBall ' three star coins
+                For i = 0 To 2
+                    Dim ox = (i - 1) * r * 0.72F
+                    Using gbr As New SolidBrush(Color.FromArgb(220, 255, 220, 40))
+                        g.FillEllipse(gbr, cx + ox - r * 0.3F, cy - r * 0.3F, r * 0.6F, r * 0.6F)
+                    End Using
+                Next
+            Case PowerUpType.YellowBallShrink ' ring
+                Using pen As New Pen(brW.Color, r * 0.22F)
+                    g.DrawEllipse(pen, cx - r * 0.7F, cy - r * 0.7F, r * 1.4F, r * 1.4F)
+                End Using
+            Case PowerUpType.PurplePaddleMega ' wide crown
+                Dim cpts4() As PointF = {
+                    New PointF(cx - r, cy + r * 0.4F),
+                    New PointF(cx - r, cy - r * 0.3F),
+                    New PointF(cx - r * 0.5F, cy + r * 0.1F),
+                    New PointF(cx - r * 0.2F, cy - r),
+                    New PointF(cx, cy + r * 0.1F),
+                    New PointF(cx + r * 0.2F, cy - r),
+                    New PointF(cx + r * 0.5F, cy + r * 0.1F),
+                    New PointF(cx + r, cy - r * 0.3F),
+                    New PointF(cx + r, cy + r * 0.4F)
+                }
+                g.FillPolygon(brW, cpts4)
+            Case PowerUpType.OrangeBallSlow ' hourglass gold
+                Dim hpts3() As PointF = {
+                    New PointF(cx - r * 0.65F, cy - r), New PointF(cx + r * 0.65F, cy - r),
+                    New PointF(cx + r * 0.12F, cy), New PointF(cx + r * 0.65F, cy + r),
+                    New PointF(cx - r * 0.65F, cy + r), New PointF(cx - r * 0.12F, cy)
+                }
+                g.FillPolygon(brW, hpts3)
+            Case PowerUpType.PinkBallFast ' shooting star
+                Dim stpts11(9) As PointF
+                For i = 0 To 9
+                    Dim ang20 = (i * 36 - 90) * Math.PI / 180.0
+                    Dim rad = If(i Mod 2 = 0, r * 0.9F, r * 0.38F)
+                    stpts11(i) = New PointF(cx + CSng(Math.Cos(ang20) * rad), cy + CSng(Math.Sin(ang20) * rad))
+                Next
+                g.FillPolygon(brW, stpts11)
+                Using pen As New Pen(brW.Color, r * 0.14F)
+                    g.DrawLine(pen, cx + r * 0.5F, cy + r * 0.5F, cx + r * 1.5F, cy + r)
+                End Using
+        End Select
+    End Sub
+
+    Private Function GetPowerUpCBLabel(pType As PowerUpType) As String
+        Select Case pType
+            Case PowerUpType.BlueBallGrow : Return "BIG"
+            Case PowerUpType.RedBallShrink : Return "1UP"
+            Case PowerUpType.GreenMultiBall : Return "x3"
+            Case PowerUpType.YellowBallShrink : Return "SML"
+            Case PowerUpType.PurplePaddleMega : Return "PAD"
+            Case PowerUpType.OrangeBallSlow : Return "SLW"
+            Case PowerUpType.PinkBallFast : Return "FST"
+            Case Else : Return "?"
+        End Select
+    End Function
 
     Private Sub DrawParticles(g As Graphics)
         For Each p In _particles
@@ -2461,7 +4592,224 @@ Public Class Form1
             End Using
         End Using
         Using fHint As New Font("Segoe UI", 10, FontStyle.Regular)
+            ' Sync status row
+            Dim syncLabel = "SYNC:  " & GetSyncLabel() & "   [ Press S to sync now ]"
+            Dim syncC = If(_syncStatus = "Synced", Color.FromArgb(80, 220, 80),
+                        If(_syncStatus = "Syncing", Color.FromArgb(255, 220, 60),
+                        If(_syncStatus = "Failed", Color.FromArgb(255, 80, 80),
+                        Color.FromArgb(140, 140, 140))))
+            Using brSync As New SolidBrush(syncC)
+                g.DrawString(syncLabel, fHint, brSync, px + 25, py + ph - 52)
+            End Using
             DrawCenteredText(g, ChrW(&H2191) & ChrW(&H2193) & " Select   " & ChrW(&H2190) & ChrW(&H2192) & " Adjust   ENTER Toggle   O / ESC Close", fHint, Color.FromArgb(130, 130, 155), py + ph - 30)
+        End Using
+    End Sub
+
+    Private Sub DrawStore(g As Graphics)
+        DrawStarField(g)
+        Using br As New SolidBrush(Color.FromArgb(210, 0, 0, 20))
+            g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+        End Using
+
+        Dim pw = 760, ph = 560
+        Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+
+        Using br As New SolidBrush(Color.FromArgb(245, 12, 12, 35))
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(100, 255, 200, 50), 2)
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+
+        ' Title + balance
+        Dim storeBalanceText = If(_devMode, $"{ChrW(&H25C6)} STORE  —  DEV MODE  {ChrW(&H25C6)}", $"{ChrW(&H25C6)} STORE  —  Balance: {_coinBalance} coins")
+        Dim storeBalanceColor = If(_devMode, Color.FromArgb(100, 255, 100), Color.FromArgb(255, 220, 60))
+        DrawCenteredText(g, storeBalanceText, _fnt22b, storeBalanceColor, py + 10)
+
+        ' Category tabs
+        Dim categories() As StoreCategory = {StoreCategory.Balls, StoreCategory.Bricks, StoreCategory.Bonuses}
+        Dim catNames() As String = {"Balls", "Bricks", "Bonuses"}
+        Dim tabY = py + 50
+        Dim tabW = 200, tabH = 32
+        Dim tabStartX = px + 30
+        For ti = 0 To 2
+            Dim tx = tabStartX + ti * (tabW + 10)
+            Dim isActive = _storeCategory = categories(ti)
+            Using br As New SolidBrush(If(isActive, Color.FromArgb(200, 255, 200, 50), Color.FromArgb(60, 150, 150, 200)))
+                Using rr = RoundedRect(New RectangleF(tx, tabY, tabW, tabH), 6)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            Dim tc = If(isActive, Color.FromArgb(20, 20, 20), Color.FromArgb(200, 200, 220))
+            Dim tsz = g.MeasureString(catNames(ti), _fnt12b)
+            Using tbr As New SolidBrush(tc)
+                g.DrawString(catNames(ti), _fnt12b, tbr, tx + (tabW - tsz.Width) / 2, tabY + (tabH - tsz.Height) / 2)
+            End Using
+        Next
+
+        ' Item list
+        Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+        Dim rowY = py + 100.0F
+        For i = 0 To catItems.Count - 1
+            Dim item = catItems(i)
+            Dim owned = IsOwned(item.Category, item.Id)
+            Dim equipped = (item.Category = StoreCategory.Balls AndAlso _activeBallSkin = item.Id) OrElse
+                           (item.Category = StoreCategory.Bricks AndAlso _activeBrickPalette = item.Id) OrElse
+                           (item.Category = StoreCategory.Bonuses AndAlso _activeBonusPack = item.Id)
+            Dim isSelected = _storeSelectedIndex = i
+            Dim rowColor As Color
+            If equipped Then
+                rowColor = Color.FromArgb(50, 80, 255, 80)
+            ElseIf owned Then
+                rowColor = Color.FromArgb(40, 100, 180, 255)
+            ElseIf isSelected Then
+                rowColor = Color.FromArgb(40, 255, 220, 80)
+            Else
+                rowColor = Color.FromArgb(30, 255, 255, 255)
+            End If
+            Using br As New SolidBrush(rowColor)
+                Using rr = RoundedRect(New RectangleF(px + 20, rowY, pw - 40, 56), 8)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            If isSelected Then
+                Using pen As New Pen(Color.FromArgb(200, 255, 220, 80), 2)
+                    Using rr = RoundedRect(New RectangleF(px + 20, rowY, pw - 40, 56), 8)
+                        g.DrawPath(pen, rr)
+                    End Using
+                End Using
+            End If
+            ' Name + description
+            Dim nameColor = If(equipped, Color.FromArgb(120, 255, 120), If(owned, Color.White, Color.FromArgb(200, 200, 200)))
+            Using tbr As New SolidBrush(nameColor)
+                g.DrawString(item.Name, _fnt13b, tbr, px + 36, rowY + 6)
+            End Using
+            Using tbr As New SolidBrush(Color.FromArgb(160, 170, 190))
+                g.DrawString(item.Description, _fnt11r, tbr, px + 36, rowY + 28)
+            End Using
+            ' Status badge (right side)
+            Dim badgeText As String
+            Dim badgeColor As Color
+            If equipped Then
+                badgeText = "EQUIPPED" : badgeColor = Color.FromArgb(80, 220, 80)
+            ElseIf owned Then
+                badgeText = "EQUIP" : badgeColor = Color.FromArgb(100, 200, 255)
+            ElseIf _coinBalance >= item.Price Then
+                badgeText = $"BUY {item.Price}" & ChrW(&H25C6) : badgeColor = Color.FromArgb(255, 220, 60)
+            Else
+                badgeText = $"{item.Price}" & ChrW(&H25C6) : badgeColor = Color.FromArgb(180, 80, 80)
+            End If
+            Dim bsz = g.MeasureString(badgeText, _fnt12b)
+            Dim bx = px + pw - 40 - bsz.Width
+            Using tbr As New SolidBrush(badgeColor)
+                g.DrawString(badgeText, _fnt12b, tbr, bx, rowY + (56 - bsz.Height) / 2)
+            End Using
+            rowY += 62
+        Next
+
+        DrawCenteredText(g, ChrW(&H2191) & ChrW(&H2193) & " Navigate   ENTER Buy/Equip   " & ChrW(&H2190) & ChrW(&H2192) & " Category   ESC Close", _fnt11r, Color.FromArgb(130, 130, 155), py + ph - 28)
+    End Sub
+
+    Private Sub DrawGameOverScreen(g As Graphics)
+        ' Semi-transparent dark overlay over frozen game
+        Using br As New SolidBrush(Color.FromArgb(185, 0, 0, 10))
+            g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+        End Using
+        Dim pw = 480, ph = 360
+        Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+        Using br As New SolidBrush(Color.FromArgb(245, 16, 8, 30))
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 16)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(160, 220, 60, 60), 2)
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 16)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+        Dim cy = py + 30
+        DrawCenteredText(g, "GAME OVER", _fnt30b, Color.FromArgb(255, 90, 90), cy) : cy += 50
+        DrawCenteredText(g, $"Score: {_score}", _fnt18b, Color.FromArgb(255, 240, 100), cy) : cy += 36
+        Dim coinsEarned = CInt(_score / 20)
+        DrawCenteredText(g, $"Coins Earned: {coinsEarned}", _fnt16r, Color.FromArgb(80, 220, 180), cy) : cy += 36
+        DrawCenteredText(g, $"Level Reached: {_level}", _fnt16r, Color.FromArgb(160, 180, 220), cy) : cy += 46
+        ' Three action buttons
+        Dim btnW = 120, btnH = 36, gap = 18
+        Dim totalW = btnW * 3 + gap * 2
+        Dim bx = px + (pw - totalW) / 2
+        Dim by = CSng(cy)
+        Dim labels() As String = {"Retry", "Store", "Menu"}
+        Dim btnColors() As Color = {Color.FromArgb(220, 70, 70), Color.FromArgb(60, 160, 220), Color.FromArgb(80, 80, 110)}
+        For i = 0 To 2
+            Dim rx = bx + i * (btnW + gap)
+            Using br2 As New SolidBrush(btnColors(i))
+                Using rr2 = RoundedRect(New RectangleF(rx, by, btnW, btnH), 8)
+                    g.FillPath(br2, rr2)
+                End Using
+            End Using
+            Using sf As New StringFormat With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
+                Using brT As New SolidBrush(Color.White)
+                    g.DrawString(labels(i), _fnt14b, brT, New RectangleF(rx, by, btnW, btnH), sf)
+                End Using
+            End Using
+        Next
+        If _highScoreDelayFrames > 0 Then
+            DrawCenteredText(g, $"Auto-advancing in {CInt(Math.Ceiling(_highScoreDelayFrames / 60.0))}s...", _fnt11r, Color.FromArgb(90, 90, 110), by + btnH + 12)
+        End If
+        DrawCenteredText(g, "[R] Retry   [S] Store   [Esc] Menu", _fnt10r, Color.FromArgb(70, 80, 100), by + btnH + 30)
+    End Sub
+
+    Private Sub DrawCredits(g As Graphics)
+        DrawStarField(g)
+        Using br As New SolidBrush(Color.FromArgb(210, 0, 0, 20))
+            g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+        End Using
+        Dim pw = 700, ph = 560
+        Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+        Using br As New SolidBrush(Color.FromArgb(245, 10, 10, 35))
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(100, 100, 180, 255), 2)
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+        Dim cy = py + 22
+        DrawCenteredText(g, "CREDITS", _fnt22b, Color.FromArgb(100, 200, 255), cy) : cy += 46
+        Dim lx = px + 40
+        Using fh As New Font("Segoe UI", 13, FontStyle.Bold)
+            Using fb As New Font("Segoe UI", 11, FontStyle.Regular)
+                Using brH As New SolidBrush(Color.FromArgb(255, 240, 100))
+                    Using brB As New SolidBrush(Color.FromArgb(200, 210, 230))
+                        g.DrawString("PROJECT", fh, brH, lx, cy) : cy += 28
+                        g.DrawString("  BrickBlast: Velocity Market  —  v1.0.0", fb, brB, lx, cy) : cy += 26
+                        g.DrawString("  A 2D Arcade Brick Breaker with Marketplace & Online Sync", fb, brB, lx, cy) : cy += 36
+
+                        g.DrawString("TEAM", fh, brH, lx, cy) : cy += 28
+                        g.DrawString("  Curtis Loop          —  Team Lead", fb, brB, lx, cy) : cy += 24
+                        g.DrawString("  Alyssa Puentes       —  Co-Lead", fb, brB, lx, cy) : cy += 24
+                        g.DrawString("  Andrea Albisser      —  Co-Lead", fb, brB, lx, cy) : cy += 36
+
+                        g.DrawString("TECHNOLOGY", fh, brH, lx, cy) : cy += 28
+                        g.DrawString("  Language:   Visual Basic  /  .NET 10", fb, brB, lx, cy) : cy += 24
+                        g.DrawString("  Framework:  Windows Forms  (WinForms)", fb, brB, lx, cy) : cy += 24
+                        g.DrawString("  Rendering:  GDI+ procedural art", fb, brB, lx, cy) : cy += 24
+                        g.DrawString("  Starter:    BrickBlast  (github.com/stuffthings15/BrickBlast)", fb, brB, lx, cy) : cy += 36
+
+                        g.DrawString("COURSE", fh, brH, lx, cy) : cy += 28
+                        g.DrawString("  CS-120  —  Game Development Final Project  —  Spring 2026", fb, brB, lx, cy) : cy += 36
+                    End Using
+                End Using
+            End Using
+        End Using
+        Using fHint As New Font("Segoe UI", 10, FontStyle.Regular)
+            DrawCenteredText(g, "ESC or ENTER  —  Back to Main Menu", fHint, Color.FromArgb(130, 130, 155), py + ph - 28)
         End Using
     End Sub
 
@@ -2660,6 +5008,23 @@ Public Class Form1
         End Using
     End Sub
 
+    Private Function ColorFromHSV(hue As Double, saturation As Double, value As Double) As Color
+        Dim hi = CInt(Math.Floor(hue / 60)) Mod 6
+        Dim f = hue / 60 - Math.Floor(hue / 60)
+        Dim v = CInt(value * 255)
+        Dim p = CInt(value * (1 - saturation) * 255)
+        Dim q = CInt(value * (1 - f * saturation) * 255)
+        Dim t = CInt(value * (1 - (1 - f) * saturation) * 255)
+        Select Case hi
+            Case 0 : Return Color.FromArgb(v, t, p)
+            Case 1 : Return Color.FromArgb(q, v, p)
+            Case 2 : Return Color.FromArgb(p, v, t)
+            Case 3 : Return Color.FromArgb(p, q, v)
+            Case 4 : Return Color.FromArgb(t, p, v)
+            Case Else : Return Color.FromArgb(v, p, q)
+        End Select
+    End Function
+
     Private Function RoundedRect(rect As RectangleF, radius As Integer) As GraphicsPath
         Dim path As New GraphicsPath()
         Dim d = radius * 2
@@ -2670,6 +5035,203 @@ Public Class Form1
         path.CloseFigure()
         Return path
     End Function
+#End Region
+
+#Region "Networking"
+    ' ── NetworkSyncService ──────────────────────────────────────────────────
+    ' Posts a lightweight player-profile payload to the configured REST endpoint.
+    ' Gameplay is never blocked; failure silently sets _syncStatus = "Failed".
+
+    Private Async Sub SyncProfileAsync()
+        If String.IsNullOrWhiteSpace(_playerName) Then Return
+        _syncStatus = "Syncing"
+        Try
+            Dim payload As New Dictionary(Of String, Object) From {
+                {"playerId", _playerName},
+                {"bestScore", If(_highScores.Count > 0, _highScores(0).PlayerScore, 0)},
+                {"currency", _coinBalance},
+                {"equippedBall", _activeBallSkin},
+                {"equippedBricks", _activeBrickPalette},
+                {"equippedBonuses", _activeBonusPack},
+                {"purchasedItems", _ownedItems.ToList()},
+                {"lastUpdatedUtc", DateTime.UtcNow.ToString("o")}
+            }
+            Dim json = System.Text.Json.JsonSerializer.Serialize(payload)
+            Dim content = New System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            Dim response = Await _httpClient.PostAsync(SyncEndpointUrl, content)
+            _syncStatus = If(response.IsSuccessStatusCode, "Synced", "Failed")
+            If response.IsSuccessStatusCode Then
+                _lastSyncUtc = DateTime.UtcNow
+                LogEvent("SyncSucceeded", $"player={_playerName}")
+            Else
+                LogEvent("SyncFailed", $"player={_playerName} status={response.StatusCode}")
+            End If
+        Catch ex As Exception
+            _syncStatus = "Failed"
+            LogEvent("SyncFailed", $"player={_playerName} ex={ex.Message}")
+        End Try
+        Invalidate()
+    End Sub
+
+    Private Async Function CheckConnectivityAsync() As Task(Of Boolean)
+        Try
+            Dim ping = Await _httpClient.GetAsync(SyncEndpointUrl & "/ping")
+            Return ping.IsSuccessStatusCode
+        Catch
+            Return False
+        End Try
+    End Function
+
+    Private Function GetSyncLabel() As String
+        Select Case _syncStatus
+            Case "Syncing" : Return "⟳ Syncing"
+            Case "Synced"
+                If _lastSyncUtc <> DateTime.MinValue Then
+                    Return "✓ Synced " & _lastSyncUtc.ToLocalTime().ToString("HH:mm")
+                End If
+                Return "✓ Synced"
+            Case "Failed" : Return "✗ Sync Failed"
+            Case Else : Return "● Offline"
+        End Select
+    End Function
+#End Region
+
+#Region "Analytics"
+    ' ── AnalyticsLogger ─────────────────────────────────────────────────────────
+    ' Lightweight local event logger. Writes timestamped entries to a log file
+    ' under %AppData%\BrickBlast\analytics.log for testing evidence and debugging.
+
+    Private ReadOnly _analyticsPath As String = IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "BrickBlast", "analytics.log")
+
+    Private Sub LogEvent(eventName As String, Optional detail As String = "")
+        Try
+            Dim line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {eventName}"
+            If Not String.IsNullOrEmpty(detail) Then line &= $"  |  {detail}"
+            IO.File.AppendAllText(_analyticsPath, line & Environment.NewLine)
+        Catch
+            ' Never crash gameplay over a logging failure
+        End Try
+    End Sub
+#End Region
+
+#Region "MarketingExport"
+    ' ── MarketingExport ──────────────────────────────────────────────────────────
+    ' Press F12 from the Main Menu to export icon.png and titlecard.png to Assets\UI\.
+    ' These are GDI+-rendered bitmaps used as submission marketing assets.
+
+    Private Sub ExportMarketingAssets()
+        Try
+            Dim uiDir = IO.Path.Combine(Application.StartupPath, "..", "..", "..", "..", "..", "..", "Assets", "UI")
+            If Not IO.Directory.Exists(uiDir) Then IO.Directory.CreateDirectory(uiDir)
+
+            ' --- 256×256 icon -------------------------------------------------------
+            Using bmp As New Bitmap(256, 256)
+                Using g = Graphics.FromImage(bmp)
+                    g.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+                    g.Clear(Color.FromArgb(18, 8, 35))
+                    ' Outer glow ring
+                    Using br As New SolidBrush(Color.FromArgb(60, 80, 40, 160))
+                        g.FillEllipse(br, 4, 4, 248, 248)
+                    End Using
+                    Using pen As New Pen(Color.FromArgb(180, 120, 60, 220), 5)
+                        g.DrawEllipse(pen, 8, 8, 240, 240)
+                    End Using
+                    ' Ball
+                    Using br2 As New Drawing2D.LinearGradientBrush(New Rectangle(80, 60, 96, 96), Color.FromArgb(255, 80, 200), Color.FromArgb(200, 30, 120), 135)
+                        g.FillEllipse(br2, 80, 60, 96, 96)
+                    End Using
+                    ' Brick row
+                    Dim bColors() As Color = {Color.FromArgb(220, 60, 60), Color.FromArgb(60, 180, 220), Color.FromArgb(240, 180, 40), Color.FromArgb(80, 200, 100)}
+                    For col = 0 To 3
+                        Using br3 As New SolidBrush(bColors(col))
+                            g.FillRectangle(br3, 20 + col * 56, 175, 48, 22)
+                        End Using
+                    Next
+                    ' Title text
+                    Using fnt As New Font("Segoe UI", 14, FontStyle.Bold)
+                        Using brT As New SolidBrush(Color.White)
+                            Dim sf As New StringFormat With {.Alignment = StringAlignment.Center}
+                            g.DrawString("BRICKBLAST", fnt, brT, New RectangleF(0, 212, 256, 30), sf)
+                        End Using
+                    End Using
+                End Using
+                bmp.Save(IO.Path.Combine(uiDir, "icon.png"), Imaging.ImageFormat.Png)
+            End Using
+
+            ' --- 1200×630 title card ------------------------------------------------
+            Using bmp2 As New Bitmap(1200, 630)
+                Using g = Graphics.FromImage(bmp2)
+                    g.SmoothingMode = Drawing2D.SmoothingMode.AntiAlias
+                    ' Background gradient
+                    Using bgBr As New Drawing2D.LinearGradientBrush(New Rectangle(0, 0, 1200, 630), Color.FromArgb(10, 5, 30), Color.FromArgb(30, 10, 60), 90)
+                        g.FillRectangle(bgBr, 0, 0, 1200, 630)
+                    End Using
+                    ' Star dots
+                    Dim rng As New Random(42)
+                    Using starBr As New SolidBrush(Color.FromArgb(120, 255, 255, 255))
+                        For i = 0 To 150
+                            Dim sx = rng.Next(0, 1200), sy = rng.Next(0, 630), sr = rng.Next(1, 3)
+                            g.FillEllipse(starBr, sx, sy, sr, sr)
+                        Next
+                    End Using
+                    ' Glow behind title
+                    Using glowBr As New SolidBrush(Color.FromArgb(40, 120, 60, 220))
+                        g.FillEllipse(glowBr, 200, 80, 800, 300)
+                    End Using
+                    ' Title
+                    Using fntT As New Font("Segoe UI", 72, FontStyle.Bold)
+                        Using brT As New SolidBrush(Color.White)
+                            Dim sf As New StringFormat With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
+                            g.DrawString("BRICKBLAST", fntT, brT, New RectangleF(0, 80, 1200, 180), sf)
+                        End Using
+                    End Using
+                    ' Subtitle
+                    Using fntS As New Font("Segoe UI", 24, FontStyle.Regular)
+                        Using brS As New SolidBrush(Color.FromArgb(200, 180, 230, 255))
+                            Dim sf As New StringFormat With {.Alignment = StringAlignment.Center}
+                            g.DrawString("Velocity Market", fntS, brS, New RectangleF(0, 260, 1200, 50), sf)
+                        End Using
+                    End Using
+                    ' Feature tags
+                    Dim tags() As String = {"Marketplace", "8 Levels", "Online Sync", "Persistent Profile", "52 Items"}
+                    Dim tagColors() As Color = {Color.FromArgb(200, 60, 140, 220), Color.FromArgb(200, 80, 180, 80), Color.FromArgb(200, 220, 140, 40), Color.FromArgb(200, 180, 60, 180), Color.FromArgb(200, 60, 200, 200)}
+                    Dim tagX = 60
+                    Using fntTag As New Font("Segoe UI", 15, FontStyle.Bold)
+                        For i = 0 To tags.Length - 1
+                            Using tagBr As New SolidBrush(tagColors(i))
+                                Dim tagRect = New RectangleF(tagX, 340, 200, 36)
+                                Using rp = RoundedRect(tagRect, 8)
+                                    g.FillPath(tagBr, rp)
+                                End Using
+                                Using brW As New SolidBrush(Color.White)
+                                    Dim sf As New StringFormat With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
+                                    g.DrawString(tags(i), fntTag, brW, tagRect, sf)
+                                End Using
+                            End Using
+                            tagX += 220
+                        Next
+                    End Using
+                    ' Bottom bar
+                    Using bbBr As New SolidBrush(Color.FromArgb(80, 255, 255, 255))
+                        g.FillRectangle(bbBr, 0, 580, 1200, 2)
+                    End Using
+                    Using fntB As New Font("Segoe UI", 13, FontStyle.Regular)
+                        Using brB As New SolidBrush(Color.FromArgb(140, 180, 200, 220))
+                            g.DrawString("Visual Basic  /  .NET 10  /  WinForms  |  v1.0.0  |  github.com/stuffthings15/BrickBlast", fntB, brB, 40, 595)
+                        End Using
+                    End Using
+                End Using
+                bmp2.Save(IO.Path.Combine(uiDir, "titlecard.png"), Imaging.ImageFormat.Png)
+            End Using
+
+            LogEvent("MarketingAssetsExported", "icon.png + titlecard.png")
+            MessageBox.Show($"Exported to:{Environment.NewLine}{uiDir}", "Marketing Export", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        Catch ex As Exception
+            MessageBox.Show($"Export failed: {ex.Message}", "Export Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
 #End Region
 
 End Class
