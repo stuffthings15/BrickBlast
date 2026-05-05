@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=BrickBlast: Velocity Market
+GenericName=Arcade Game
+Comment=Break bricks, earn coins, unlock skins — BrickBlast Velocity Market
+Exec=bash -c 'xdg-open "%k/../index.html"'
+Icon=%k/../assets/icon.png
+Terminal=false
+Categories=Game;ArcadeGame;
+Keywords=brick;breakout;arcade;ball;paddle;
+StartupNotify=true
