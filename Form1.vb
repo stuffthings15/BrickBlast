@@ -2864,43 +2864,48 @@ Public Class Form1
 
     Private Sub DrawHUD(g As Graphics)
         Dim f = _fnt13b
-        ' Score with optional star icon
+
+        ' ── Row 1 (y=12): SCORE left | LEVEL centre | LIVES right ──────────
         Dim starSpr = TryGetSprite("ui/star")
         If starSpr IsNot Nothing Then
             g.DrawImage(starSpr, 15, 11, 20, 20)
         End If
         DrawTextShadow(g, $"SCORE: {_score}", f, Color.White, CSng(If(starSpr IsNot Nothing, 38, 15)), 12)
         DrawCenteredText(g, $"LEVEL {_level}", f, Color.FromArgb(180, 200, 255), 12)
-        ' Lives — drawn directly so transparency issues with DrawImage never occur
         Dim hSz As Single = 22, hPad As Single = 2
         Dim hX = CSng(LOGICAL_WIDTH - 15 - (hSz + hPad) * _lives)
         For h = 0 To _lives - 1
             DrawHeartShape(g, hX + h * (hSz + hPad), 10.0F, hSz, hSz, Color.FromArgb(255, 80, 100))
         Next
+
+        ' ── Row 2 (y=34): status left | COINS centre | paddle timer right ──
+        ' Left status: speed-boost takes priority over ball-size
         If _speedBoost Then
-            Dim bt = ChrW(&H26A1) & " 2x SPEED"
-            Dim bsz = g.MeasureString(bt, f)
-            DrawTextShadow(g, bt, f, Color.FromArgb(255, 255, 80), (LOGICAL_WIDTH - bsz.Width) / 2, 32)
+            DrawTextShadow(g, ChrW(&H26A1) & " 2x SPEED", f, Color.FromArgb(255, 255, 80), 15, 34)
+        ElseIf _ballRadius <> BALL_RADIUS Then
+            DrawTextShadow(g, $"Ball: {_ballRadius}px", f, Color.FromArgb(150, 200, 255), 15, 34)
         End If
-        If _ballRadius <> BALL_RADIUS Then
-            Dim rt = $"Ball: {_ballRadius}px"
-            DrawTextShadow(g, rt, f, Color.FromArgb(150, 200, 255), 15, 32)
-        End If
+
+        ' Centre: coin balance
+        Dim coinText = If(_devMode, $"{ChrW(&H25C6)} DEV", $"{ChrW(&H25C6)} {_coinBalance}")
+        Dim coinSz = g.MeasureString(coinText, f)
+        Dim coinColor = If(_devMode, Color.FromArgb(100, 255, 100), Color.FromArgb(255, 220, 60))
+        DrawTextShadow(g, coinText, f, coinColor, (LOGICAL_WIDTH - coinSz.Width) / 2, 34)
+
+        ' Right: paddle-width timer
         If _paddleWidthTimer > 0 Then
             Dim sec = CInt(Math.Ceiling(_paddleWidthTimer / 60.0))
             Dim pt = $"Paddle: {sec}s"
             Dim psz = g.MeasureString(pt, f)
-            DrawTextShadow(g, pt, f, Color.FromArgb(170, 80, 255), LOGICAL_WIDTH - psz.Width - 15, 32)
+            DrawTextShadow(g, pt, f, Color.FromArgb(170, 80, 255), LOGICAL_WIDTH - psz.Width - 15, 34)
         End If
-        ' Coin balance — top-centre below level label
-        Dim coinText = If(_devMode, $"{ChrW(&H25C6)} DEV", $"{ChrW(&H25C6)} {_coinBalance}")
-        Dim coinSz = g.MeasureString(coinText, f)
-        Dim coinColor = If(_devMode, Color.FromArgb(100, 255, 100), Color.FromArgb(255, 220, 60))
-        DrawTextShadow(g, coinText, f, coinColor, (LOGICAL_WIDTH - coinSz.Width) / 2, 32)
+
+        ' ── Separator ───────────────────────────────────────────────────────
         Using pen As New Pen(Color.FromArgb(40, 100, 180, 255), 1)
             g.DrawLine(pen, 0, 50, LOGICAL_WIDTH, 50)
         End Using
-        ' Sync status — bottom-right corner
+
+        ' ── Sync status — bottom-right corner ───────────────────────────────
         Dim syncLabel = GetSyncLabel()
         Dim syncF = _fnt11r
         Dim syncSz = g.MeasureString(syncLabel, syncF)
