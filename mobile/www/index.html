@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000014">
 <title>Brick Blast - Team Fast Talk</title>
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;background:#000014;touch-action:none;user-select:none;-webkit-user-select:none}
@@ -470,14 +471,32 @@ function drawMenu(){
  drawMobileBtn(LW/2-80,575,160,40,'OPTIONS','#64c8ff');
 }
 
+function drawHeart(x,y,w,h){
+ const pad=w*0.08,iw=w-pad*2,ih=h-pad*2,ix=x+pad,iy=y+pad;
+ const grd=ctx.createLinearGradient(ix,iy,ix,iy+ih);
+ grd.addColorStop(0,'#ff8090');grd.addColorStop(1,'#ff5064');
+ ctx.fillStyle=grd;
+ ctx.beginPath();ctx.arc(ix+iw*0.27,iy+ih*0.31,iw*0.27,0,Math.PI*2);ctx.fill();
+ ctx.beginPath();ctx.arc(ix+iw*0.73,iy+ih*0.31,iw*0.27,0,Math.PI*2);ctx.fill();
+ ctx.beginPath();ctx.moveTo(ix,iy+ih*0.30);ctx.lineTo(ix+iw,iy+ih*0.30);ctx.lineTo(ix+iw*0.5,iy+ih);ctx.closePath();ctx.fill();
+ ctx.fillStyle='rgba(255,255,255,0.43)';
+ ctx.beginPath();ctx.arc(ix+iw*0.21,iy+ih*0.17,iw*0.11,0,Math.PI*2);ctx.fill();
+}
+
 function drawHUD(){
+ // Row 1 (y=28): SCORE left | LEVEL centre | LIVES right
  ctx.font='bold 13px Segoe UI,sans-serif';ctx.fillStyle='#fff';ctx.fillText('SCORE: '+score,15,28);
  centerText('LEVEL '+level,28,'bold 13px Segoe UI,sans-serif','#b4c8ff');
- const lt='LIVES: '+'\u2665'.repeat(lives);
- ctx.fillStyle='#ff6482';ctx.textAlign='right';ctx.fillText(lt,LW-15,28);ctx.textAlign='left';
- if(speedBoost)centerText('\u26A1 2x SPEED',48,'bold 13px Segoe UI,sans-serif','#ffc832');
- if(ballRadius!==BALL_R){ctx.fillStyle='#96c8ff';ctx.fillText('Ball: '+ballRadius+'px',15,48)}
- if(paddleWTimer>0){const s=Math.ceil(paddleWTimer/60);ctx.fillStyle='#aa50ff';ctx.textAlign='right';ctx.fillText('Paddle: '+s+'s',LW-15,48);ctx.textAlign='left'}
+ const hSz=22,hPad=2,hX=LW-15-(hSz+hPad)*lives;
+ for(let h=0;h<lives;h++)drawHeart(hX+h*(hSz+hPad),8,hSz,hSz);
+ // Row 2 (y=44): status left | COINS centre | paddle right
+ if(speedBoost){ctx.fillStyle='#ffc832';ctx.font='bold 13px Segoe UI,sans-serif';ctx.fillText('\u26A1 2x SPEED',15,44);}
+ else if(ballRadius!==BALL_R){ctx.fillStyle='#96c8ff';ctx.font='bold 13px Segoe UI,sans-serif';ctx.fillText('Ball: '+ballRadius+'px',15,44);}
+ const coinText='\u25C6 '+(typeof devMode!=='undefined'&&devMode?'DEV':(typeof coins!=='undefined'?coins:0));
+ ctx.font='bold 13px Segoe UI,sans-serif';
+ ctx.fillStyle=(typeof devMode!=='undefined'&&devMode)?'#64ff64':'#ffdc40';
+ ctx.textAlign='center';ctx.fillText(coinText,LW/2,44);ctx.textAlign='left';
+ if(paddleWTimer>0){const s=Math.ceil(paddleWTimer/60);ctx.fillStyle='#aa50ff';ctx.textAlign='right';ctx.font='bold 13px Segoe UI,sans-serif';ctx.fillText('Paddle: '+s+'s',LW-15,44);ctx.textAlign='left';}
  ctx.strokeStyle='rgba(100,180,255,0.16)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,50);ctx.lineTo(LW,50);ctx.stroke();
 }
 
@@ -600,8 +619,18 @@ function drawHighScore(){
  centerText('Final Score: '+score,py+95,'bold 18px Segoe UI,sans-serif','#ffdc64');
  centerText('Level '+level+' | Ball: '+ballRadius+'px',py+125,'12px Segoe UI,sans-serif','#b4c8ff');
  let y=py+160;
- if(!hsSaved){const cur=frameCount%60<30?'_':' ';
-  centerText('Enter Name: '+nameInput+cur,y,'14px Segoe UI,sans-serif','#fff');y+=30;
+ if(!hsSaved){const cur=frameCount%60<30?'|':' ';
+  // Input box
+  const ibW=320,ibH=38,ibX=(LW-ibW)/2,ibY=y-4;
+  ctx.fillStyle='rgba(255,255,255,0.08)';ctx.strokeStyle='rgba(140,100,255,0.7)';ctx.lineWidth=2;
+  drawRRect(ibX,ibY,ibW,ibH,8);ctx.fill();ctx.stroke();
+  // Centered text inside box
+  ctx.font='bold 16px Segoe UI,sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';
+  ctx.fillText(nameInput+cur,LW/2,ibY+ibH/2+6);
+  ctx.textAlign='left';
+  // Label above box
+  centerText('Enter Name:',ibY-16,'11px Segoe UI,sans-serif','rgba(180,200,255,0.8)');
+  y=ibY+ibH+10;
   centerText('Type name + press ENTER',y,'10px Segoe UI,sans-serif','#8c8ca0');
  }else centerText('Score saved! Click/Tap/SPACE/\uD83C\uDFAE A',y,'12px Segoe UI,sans-serif','#64ff96');
  y=py+230;centerText('HIGH SCORES',y,'bold 14px Segoe UI,sans-serif','#64c8ff');y+=30;
@@ -680,6 +709,7 @@ document.addEventListener('keydown',e=>{
   if(state===States.Menu){startGame();if(audioReady)startMusic()}
   else if(state===States.LevelComplete)nextLevel();
   else if(state===States.Paused)state=States.Playing;
+  else if(state===States.Playing){speedBoost=!speedBoost;playSFX(sfxData[sfxStyle][10],80)}
  }
  if((k==='p'||k==='escape')&&state===States.Playing)state=States.Paused;
  else if((k==='p'||k==='escape')&&state===States.Paused)state=States.Playing;
@@ -765,6 +795,35 @@ function gameLoop(){
 // Init
 const ld=document.getElementById('loading');if(ld)ld.remove();
 initStars();loadHS();requestAnimationFrame(gameLoop);
+
+// --- Capacitor Mobile Integration ---
+(async function initMobile(){
+ try {
+  if(window.Capacitor){
+   const{SplashScreen}=await import('@capacitor/splash-screen');
+   const{StatusBar,Style}=await import('@capacitor/status-bar');
+   const{ScreenOrientation}=await import('@capacitor/screen-orientation');
+   const{App}=await import('@capacitor/app');
+   // Hide status bar for fullscreen gaming
+   try{await StatusBar.setStyle({style:Style.Dark})}catch(e){}
+   try{await StatusBar.setBackgroundColor({color:'#000014'})}catch(e){}
+   try{await StatusBar.hide()}catch(e){}
+   // Lock to landscape
+   try{await ScreenOrientation.lock({orientation:'landscape'})}catch(e){}
+   // Hide splash after game loads
+   try{await SplashScreen.hide()}catch(e){}
+   // Handle back button on Android
+   App.addListener('backButton',({canGoBack})=>{
+    if(state===States.Playing){state=States.Paused}
+    else if(state===States.Paused){state=States.Playing}
+    else if(state===States.Options){state=prevState}
+    else if(state===States.Menu){App.exitApp()}
+   });
+   console.log('Capacitor mobile init complete');
+  }
+ }catch(e){console.log('Not running in Capacitor:',e)}
+})();
+
 </script>
 </body>
 </html>

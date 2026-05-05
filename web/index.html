@@ -618,8 +618,18 @@ function drawHighScore(){
  centerText('Final Score: '+score,py+95,'bold 18px Segoe UI,sans-serif','#ffdc64');
  centerText('Level '+level+' | Ball: '+ballRadius+'px',py+125,'12px Segoe UI,sans-serif','#b4c8ff');
  let y=py+160;
- if(!hsSaved){const cur=frameCount%60<30?'_':' ';
-  centerText('Enter Name: '+nameInput+cur,y,'14px Segoe UI,sans-serif','#fff');y+=30;
+ if(!hsSaved){const cur=frameCount%60<30?'|':' ';
+  // Input box
+  const ibW=320,ibH=38,ibX=(LW-ibW)/2,ibY=y-4;
+  ctx.fillStyle='rgba(255,255,255,0.08)';ctx.strokeStyle='rgba(140,100,255,0.7)';ctx.lineWidth=2;
+  drawRRect(ibX,ibY,ibW,ibH,8);ctx.fill();ctx.stroke();
+  // Centered text inside box
+  ctx.font='bold 16px Segoe UI,sans-serif';ctx.fillStyle='#fff';ctx.textAlign='center';
+  ctx.fillText(nameInput+cur,LW/2,ibY+ibH/2+6);
+  ctx.textAlign='left';
+  // Label above box
+  centerText('Enter Name:',ibY-16,'11px Segoe UI,sans-serif','rgba(180,200,255,0.8)');
+  y=ibY+ibH+10;
   centerText('Type name + press ENTER',y,'10px Segoe UI,sans-serif','#8c8ca0');
  }else centerText('Score saved! Click/Tap/SPACE/\uD83C\uDFAE A',y,'12px Segoe UI,sans-serif','#64ff96');
  y=py+230;centerText('HIGH SCORES',y,'bold 14px Segoe UI,sans-serif','#64c8ff');y+=30;

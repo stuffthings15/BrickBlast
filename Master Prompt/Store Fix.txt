@@ -1,0 +1,296 @@
+You are an expert UI engineer and game UX polish specialist. Fix the shop/store screen layout shown in the provided screenshot. The current UI has severe overlap, clipping, and hierarchy problems. Your task is to refactor the shop UI so every element is readable, aligned, and responsive at the target resolution and adjacent aspect ratios.
+
+PRIMARY PROBLEM TO FIX:
+The store screen title, category tabs, item cards, item names, item descriptions, scrollbar, and footer controls are overlapping. Text is clipped vertically inside cards. The title sits behind the category navigation. The item grid begins too high. Footer hints are partially outside the panel. The overall layout does not reserve safe spacing for header, content, scrollbar, and footer.
+
+TARGET RESULT:
+Create a clean, non-overlapping shop UI with a fixed layout hierarchy:
+
+1. Outer modal/panel
+2. Header/title area
+3. Category tab row
+4. Scrollable item grid
+5. Footer control hint area
+
+Nothing may overlap between these zones.
+
+SCREENSHOT-SPECIFIC ISSUES TO CORRECT:
+- “STORE” and “DEV MODE(unlimited coins)” overlap the category tabs.
+- Category tabs overlap the first row of item cards.
+- Item card text is clipped, especially names like “Classic Ball,” “Ice Ball,” “Gold Ball,” “Rainbow Ball,” “Lava Ball,” and “Void Ball.”
+- Item descriptions are too close to item names.
+- Buy buttons are aligned inconsistently and crowd text.
+- The equipped button is too close to the card contents.
+- The two-column item grid starts too close to the top.
+- The scrollbar is too close to the item cards and appears cramped.
+- The footer controls overlap the bottom border and are partially clipped.
+- The bottom row of cards is too close to the footer.
+- The selected card border is fine visually, but its internal content needs padding.
+- The header decorative diamonds should not collide with text or tabs.
+- The UI does not appear to respect a safe area inside the modal.
+
+REQUIRED LAYOUT STRUCTURE:
+Refactor the shop screen into these explicit layout regions:
+
+OuterPanel:
+- Anchored center.
+- Width: approximately 80 percent of screen width.
+- Height: approximately 82 percent of screen height.
+- Minimum internal padding: 32 px left/right and 28 px top/bottom.
+- Border remains visible.
+- All child elements must stay inside this panel with padding.
+
+HeaderRegion:
+- Height: 72 px minimum.
+- Contains only title and optional dev-mode label.
+- Title must be horizontally centered.
+- Title must not overlap tabs.
+- Use one line if possible:
+  STORE — DEV MODE (unlimited coins)
+- If screen is too narrow, split into two stacked lines:
+  STORE
+  DEV MODE (unlimited coins)
+- Header text must have a max font size that fits available width.
+- Decorative diamonds must be placed outside the text bounds with at least 24 px spacing.
+
+TabRegion:
+- Positioned below HeaderRegion.
+- Height: 52 px minimum.
+- Contains category tabs:
+  BALLS
+  BRICKS
+  BONUSES
+- Tabs must be horizontally centered.
+- Tabs must not overlap header or content grid.
+- Tabs need consistent width, height, spacing, and padding.
+- Active tab should be visually distinct.
+- Minimum vertical margin between HeaderRegion and TabRegion: 8 px.
+- Minimum vertical margin between TabRegion and item grid: 18 px.
+
+ContentRegion:
+- Scrollable item grid.
+- Starts below tabs.
+- Ends above footer.
+- Must not touch footer.
+- Must include right-side scrollbar with proper spacing.
+- Content area should have at least 16 px right padding before scrollbar.
+- Grid must be two columns on wide screens.
+- If available width is too small, automatically fall back to one column.
+- Row spacing: minimum 14 px.
+- Column spacing: minimum 16 px.
+- Content viewport must clip scrolling cards, but not clip visible text inside cards.
+- The first row of cards must never be hidden under the tabs.
+
+FooterRegion:
+- Height: 48 px minimum.
+- Positioned at bottom inside OuterPanel.
+- Footer must sit above bottom border with at least 18 px bottom padding.
+- Footer text must not overlap cards or panel border.
+- Footer should show:
+  ↑↓ Navigate    ENTER Buy/Equip    ←→ Category    Scroll wheel    ESC Close
+- If width is insufficient, reduce font size or wrap to two centered rows.
+- Footer must remain readable.
+
+ITEM CARD REQUIREMENTS:
+Each item card must be redesigned or resized so text never clips.
+
+Card size:
+- Minimum height: 120 px.
+- Preferred height: 128–140 px if resolution allows.
+- Card internal padding: 16 px.
+- Icon size: 80–88 px.
+- Icon area fixed width.
+- Text area starts after icon with at least 18 px gap.
+- Buy/equip button fixed on the right side or bottom-right.
+- Do not allow item name or description to pass under the buy button.
+
+Card content layout:
+- Left: icon preview.
+- Middle: item name and description.
+- Right: buy/equip button.
+- Item name font size should fit without clipping.
+- Description font size should be smaller and support wrapping.
+- Name and description must have at least 8 px vertical gap.
+- Text block must be vertically centered or top-aligned with sufficient padding.
+- Use text overflow handling:
+  - Prefer wrap for descriptions.
+  - Prefer shrink-to-fit or ellipsis for very long names.
+- Never clip item names vertically.
+- Never clip descenders or tall letters.
+- Use line-height large enough for the font.
+
+Button requirements:
+- Buy button width: minimum 150 px.
+- Buy button height: minimum 42 px.
+- Equipped button width: minimum 170 px.
+- Button aligned consistently across all cards.
+- Button must not overlap text.
+- Button text must be centered.
+- Price icon/diamond must remain inside button.
+
+SCROLLBAR REQUIREMENTS:
+- Scrollbar track must live inside ContentRegion.
+- Scrollbar must not overlap cards.
+- Scrollbar must not extend into footer.
+- Scrollbar arrow/indicator at bottom must not collide with footer text.
+- Add at least 12 px gap between item grid and scrollbar.
+
+RESPONSIVE RULES:
+Implement robust layout behavior for different resolutions:
+- At 1600x900, two columns should fit cleanly.
+- At 1366x768, still no overlap.
+- At narrower widths, switch to one column.
+- At shorter heights, reduce font sizes slightly and preserve spacing.
+- Do not fix the problem only for the screenshot resolution.
+- Use anchored layout containers, layout groups, constraints, or calculated rectangles rather than hard-coded overlapping absolute positions.
+- Use safe-area padding.
+
+IMPLEMENTATION GUIDANCE:
+Search for the shop/store UI code and replace any fragile absolute coordinates with a layout system.
+
+Use one of these approaches depending on the project codebase:
+- If using a retained UI framework, use vertical layout containers:
+  OuterPanel
+    HeaderRegion
+    TabRegion
+    ContentScrollView
+      GridContainer
+    FooterRegion
+
+- If using immediate-mode drawing, calculate rectangles in order:
+  panelRect
+  innerRect = panelRect.Inset(32, 28)
+  headerRect = top slice of innerRect
+  tabRect = next slice
+  footerRect = bottom slice
+  contentRect = remaining middle area
+  gridRect = contentRect minus scrollbar gutter
+
+Do not draw any element outside its assigned rectangle.
+
+Pseudo layout algorithm:
+
+1. Compute panelRect centered on screen.
+2. Compute innerRect by applying panel padding.
+3. Allocate footerRect from bottom of innerRect.
+4. Allocate headerRect from top of innerRect.
+5. Allocate tabRect below headerRect.
+6. Allocate contentRect as the remaining vertical space between tabRect and footerRect.
+7. Inside contentRect, reserve scrollbarGutterWidth.
+8. Compute column count:
+   if contentWidth >= 980 px: 2 columns
+   else: 1 column
+9. Compute cardWidth based on column count and column gap.
+10. Compute cardHeight using max of:
+    - 120 px
+    - icon size + vertical padding
+    - required text height + vertical padding
+11. Place cards in grid rows.
+12. Apply scroll offset only to card positions inside content viewport.
+13. Clip cards only at viewport edge, not internally.
+14. Draw scrollbar inside contentRect.
+15. Draw footer last inside footerRect.
+
+RECOMMENDED DIMENSIONS FOR 1600x900:
+Panel:
+- x: centered
+- y: centered
+- width: 1280 px
+- height: 760 px
+
+Inner padding:
+- left/right: 40 px
+- top: 34 px
+- bottom: 30 px
+
+Header:
+- height: 70 px
+
+Tabs:
+- height: 54 px
+- top margin after header: 4 px
+- bottom margin after tabs: 20 px
+
+Footer:
+- height: 44 px
+- top margin before footer: 18 px
+
+Content:
+- remaining height
+- scrollbar gutter: 28 px
+
+Cards:
+- two columns
+- row height: 128 px
+- column gap: 16 px
+- row gap: 14 px
+- icon: 82 px
+- padding: 16 px
+- button: 160 x 44 px
+
+TYPOGRAPHY REQUIREMENTS:
+- Header/title: reduce size until it fits.
+- Tab text: must fit inside tab buttons.
+- Item name: must fit one line or ellipsize.
+- Item description: can wrap to two lines.
+- Footer text: can shrink or wrap.
+- All text must have sufficient line height.
+- No text should be vertically clipped.
+
+VISUAL HIERARCHY:
+- Header title should be the highest visual element.
+- Tabs should be clearly below title.
+- Content cards should start below tabs.
+- Footer should be subtle and anchored at bottom.
+- Active selected card should retain green outline.
+- Active category tab should retain gold highlight.
+- The panel should remain visually centered.
+
+ACCEPTANCE TESTS:
+After implementation, verify all of the following:
+
+At 1600x900:
+- Header does not overlap tabs.
+- Tabs do not overlap item cards.
+- First row item names are fully visible.
+- All card descriptions are readable.
+- Buy/equip buttons do not overlap text.
+- Footer is fully inside panel.
+- Scrollbar does not touch footer.
+- Selected card outline stays inside card bounds.
+- No text is clipped.
+
+At 1366x768:
+- No overlap.
+- Header still readable.
+- Tabs readable.
+- Cards readable.
+- Footer readable or wrapped.
+- Scrollbar usable.
+
+At a narrow layout:
+- Grid switches to one column.
+- No card content overlaps.
+- Footer remains inside panel.
+
+Regression checks:
+- Category switching still works.
+- Keyboard navigation still works.
+- ENTER still buys/equips.
+- Arrow keys still navigate.
+- Scroll wheel still scrolls.
+- ESC still closes.
+- Selection highlight follows selected item.
+- Purchase state and equipped state display correctly.
+- Dev mode text is visible but never collides with tabs.
+
+FINAL OUTPUT EXPECTED:
+Return a concise implementation summary listing:
+- Files changed.
+- Layout system used.
+- Exact spacing / sizing constants added.
+- Responsive behavior implemented.
+- Before/after issue checklist.
+- Any remaining known limitations.
+
+Do not remove functionality while fixing layout. Preserve store navigation, purchase/equip logic, category switching, scrolling, selected item highlighting, and dev mode behavior.

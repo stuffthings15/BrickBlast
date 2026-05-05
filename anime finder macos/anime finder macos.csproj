@@ -5,6 +5,10 @@
     <RootNamespace>BrickBlastMacOS</RootNamespace>
     <Nullable>enable</Nullable>
     <Platforms>x64;arm64</Platforms>
+    <LangVersion>latest</LangVersion>
+    <!-- Suppress AXAML x:Name generator when cross-compiling from Windows -->
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia"               Version="11.2.5" />

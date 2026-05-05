@@ -1,13 +1,14 @@
 Imports Avalonia
 Imports Avalonia.Controls.ApplicationLifetimes
-Imports Avalonia.Markup.Xaml
+Imports Avalonia.Themes.Fluent
 
 Namespace BrickBlastMacOS
     Public Class App
         Inherits Application
 
         Public Overrides Sub Initialize()
-            AvaloniaXamlLoader.Load(Me)
+            ' Wire theme in pure code — no AXAML loader needed
+            Styles.Add(New FluentTheme())
         End Sub
 
         Public Overrides Sub OnFrameworkInitializationCompleted()

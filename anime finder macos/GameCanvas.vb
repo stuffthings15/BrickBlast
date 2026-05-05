@@ -65,10 +65,10 @@ Namespace BrickBlastMacOS
         ' ── Constructor ───────────────────────────────────────────────────────
         Public Sub New()
             Focusable = True
-            AddHandler Loaded, AddressOf OnLoaded
+            AddHandler Loaded, AddressOf HandleLoaded
         End Sub
 
-        Private Sub OnLoaded(sender As Object, e As Avalonia.Interactivity.RoutedEventArgs)
+        Private Sub HandleLoaded(sender As Object, e As Avalonia.Interactivity.RoutedEventArgs)
             InitStarField()
             _timer = New DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(16)}
             AddHandler _timer.Tick, AddressOf OnTick
@@ -82,10 +82,10 @@ Namespace BrickBlastMacOS
             If _cache.ContainsKey(key) Then Return _cache(key)
             Dim parts = key.Split("/"c)
             If parts.Length < 2 Then Return Nothing
-            Dim file = Path.Combine(_assetsPath, parts(0), parts(1) & ".png")
-            If Not File.Exists(file) Then Return Nothing
+            Dim filePath = Path.Combine(_assetsPath, parts(0), parts(1) & ".png")
+            If Not IO.File.Exists(filePath) Then Return Nothing
             Try
-                Dim bmp = New Bitmap(file)
+                Dim bmp = New Bitmap(filePath)
                 _cache(key) = bmp
                 Return bmp
             Catch

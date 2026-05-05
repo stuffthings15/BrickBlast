@@ -323,6 +323,7 @@ Public Class Form1
     ' Store navigation
     Private _storeCategory As StoreCategory = StoreCategory.Balls
     Private _storeSelectedIndex As Integer = 0
+    Private _storeScrollOffset As Integer = 0   ' first visible card index
 
     ' Active cosmetic selections
     Private _activeBallSkin As String = "base"
@@ -502,23 +503,52 @@ Public Class Form1
         End If
 
         If _state = GameState.Store Then
+            ' Compute rowsVisible dynamically so scroll clamp matches DrawStore
+            Const KBD_PAD_H As Integer = 36, KBD_PAD_V As Integer = 28
+            Const KBD_HDR_H As Integer = 72, KBD_TAB_H As Integer = 52
+            Const KBD_HDR_TAB_GAP As Integer = 8, KBD_TAB_GRID_GAP As Integer = 20
+            Const KBD_FTR_H As Integer = 50, KBD_FTR_PAD As Integer = 20
+            Const KBD_SB_W As Integer = 14, KBD_SB_GAP As Integer = 12
+            Const KBD_ROW_GAP As Integer = 14, KBD_CARD_H As Integer = 132
+            Dim KPH = CInt(LOGICAL_HEIGHT * 0.86)
+            Dim KPW = CInt(LOGICAL_WIDTH * 0.88)
+            Dim kpy = CSng((LOGICAL_HEIGHT - KPH) / 2)
+            Dim kGridTop = kpy + KBD_PAD_V + KBD_HDR_H + KBD_HDR_TAB_GAP + KBD_TAB_H + KBD_TAB_GRID_GAP
+            Dim kFtrTop = kpy + KPH - KBD_FTR_PAD - KBD_FTR_H
+            Dim kGridH = Math.Max(1, kFtrTop - 8 - kGridTop)
+            Dim kInnerW = KPW - KBD_PAD_H * 2
+            Dim kGridW = CInt(kInnerW - KBD_SB_W - KBD_SB_GAP)
+            Dim kCols = If(kGridW >= 640, 2, 1)
+            Dim CARDS_VIS = Math.Max(1, CInt(Math.Floor((kGridH + KBD_ROW_GAP) / (KBD_CARD_H + KBD_ROW_GAP))))
             Select Case e.KeyCode
                 Case Keys.Left, Keys.A
                     _storeCategory = CType((_storeCategory - 1 + 3) Mod 3, StoreCategory)
                     _storeSelectedIndex = 0
+                    _storeScrollOffset = 0
                 Case Keys.Right, Keys.D
                     _storeCategory = CType((_storeCategory + 1) Mod 3, StoreCategory)
                     _storeSelectedIndex = 0
+                    _storeScrollOffset = 0
                 Case Keys.Up
-                    Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
-                    If catItems.Count > 0 Then _storeSelectedIndex = (_storeSelectedIndex - 1 + catItems.Count) Mod catItems.Count
+                    Dim catItemsUp = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+                    If catItemsUp.Count > 0 Then
+                        _storeSelectedIndex = Math.Max(0, _storeSelectedIndex - kCols)
+                        Dim rowUp = _storeSelectedIndex \ kCols
+                        If rowUp < _storeScrollOffset Then _storeScrollOffset = rowUp
+                        If rowUp >= _storeScrollOffset + CARDS_VIS Then _storeScrollOffset = rowUp - CARDS_VIS + 1
+                    End If
                 Case Keys.Down
-                    Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
-                    If catItems.Count > 0 Then _storeSelectedIndex = (_storeSelectedIndex + 1) Mod catItems.Count
+                    Dim catItemsDn = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+                    If catItemsDn.Count > 0 Then
+                        _storeSelectedIndex = Math.Min(catItemsDn.Count - 1, _storeSelectedIndex + kCols)
+                        Dim rowDn = _storeSelectedIndex \ kCols
+                        If rowDn < _storeScrollOffset Then _storeScrollOffset = rowDn
+                        If rowDn >= _storeScrollOffset + CARDS_VIS Then _storeScrollOffset = rowDn - CARDS_VIS + 1
+                    End If
                 Case Keys.Enter, Keys.Space
-                    Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
-                    If _storeSelectedIndex >= 0 AndAlso _storeSelectedIndex < catItems.Count Then
-                        Dim sel = catItems(_storeSelectedIndex)
+                    Dim catItemsEnt = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+                    If _storeSelectedIndex >= 0 AndAlso _storeSelectedIndex < catItemsEnt.Count Then
+                        Dim sel = catItemsEnt(_storeSelectedIndex)
                         If IsOwned(sel.Category, sel.Id) Then
                             EquipItem(sel)
                         Else
@@ -670,6 +700,38 @@ Public Class Form1
         _touchActive = False
     End Sub
 
+    Private Sub Form1_MouseWheel(sender As Object, e As MouseEventArgs) Handles MyBase.MouseWheel
+        If _state = GameState.Store Then
+            ' Mirror DrawStore responsive geometry
+            Const PAD_H_W As Integer = 36, TAB_H_W As Integer = 52
+            Const HDR_H_W As Integer = 72, HDR_TAB_GAP_W As Integer = 8
+            Const TAB_GRID_GAP_W As Integer = 20, FTR_H_W As Integer = 50
+            Const FTR_PAD_W As Integer = 20, SB_W_W As Integer = 14
+            Const SB_GAP_W As Integer = 12, COL_GAP_W As Integer = 16
+            Const ROW_GAP_W As Integer = 14, CARD_H_W As Integer = 132
+            Const PAD_V_W As Integer = 28
+            Dim PH_W = CInt(LOGICAL_HEIGHT * 0.86)
+            Dim py2_W = CSng((LOGICAL_HEIGHT - PH_W) / 2)
+            Dim PW_W = CInt(LOGICAL_WIDTH * 0.88)
+            Dim innerW_W = PW_W - PAD_H_W * 2
+            Dim gridTop_W = py2_W + PAD_V_W + HDR_H_W + HDR_TAB_GAP_W + TAB_H_W + TAB_GRID_GAP_W
+            Dim ftrTop_W = py2_W + PH_W - FTR_PAD_W - FTR_H_W
+            Dim gridH_W = Math.Max(1, ftrTop_W - 8 - gridTop_W)
+            Dim sbGutter_W = SB_W_W + SB_GAP_W
+            Dim gridW_W = CInt(innerW_W - sbGutter_W)
+            Dim cols_W = If(gridW_W >= 640, 2, 1)
+            Dim rowsVisible_W = Math.Max(1, CInt(Math.Floor((gridH_W + ROW_GAP_W) / (CARD_H_W + ROW_GAP_W))))
+            Dim catItemsW = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+            Dim totalRowsW = CInt(Math.Ceiling(catItemsW.Count / CDbl(cols_W)))
+            Dim maxScrollW = Math.Max(0, totalRowsW - rowsVisible_W)
+            If e.Delta < 0 Then
+                _storeScrollOffset = Math.Min(_storeScrollOffset + 1, maxScrollW)
+            Else
+                _storeScrollOffset = Math.Max(_storeScrollOffset - 1, 0)
+            End If
+        End If
+    End Sub
+
     Private Sub Form1_MouseDown(sender As Object, e As MouseEventArgs) Handles MyBase.MouseDown
         Dim mx = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
         Dim my = CSng(e.Y) * LOGICAL_HEIGHT / ClientSize.Height
@@ -744,39 +806,89 @@ Public Class Form1
             Return
         End If
         If _state = GameState.Store Then
-            ' Handled by DrawStore click detection is keyboard-first;
-            ' mouse click on item row selects and activates it
-            Dim pw2 = 760, ph2 = 560
-            Dim px2 = CSng((LOGICAL_WIDTH - pw2) / 2)
-            Dim py2 = CSng((LOGICAL_HEIGHT - ph2) / 2)
-            ' Category tabs (y ~ py2+50)
-            Dim tabY = py2 + 50
-            Dim tab0X = px2 + 30, tabW3 = 200
-            If my >= tabY AndAlso my < tabY + 32 Then
-                If mx >= tab0X AndAlso mx < tab0X + tabW3 Then
-                    _storeCategory = StoreCategory.Balls : _storeSelectedIndex = 0
-                ElseIf mx >= tab0X + tabW3 + 10 AndAlso mx < tab0X + tabW3 * 2 + 10 Then
-                    _storeCategory = StoreCategory.Bricks : _storeSelectedIndex = 0
-                ElseIf mx >= tab0X + tabW3 * 2 + 20 AndAlso mx < tab0X + tabW3 * 3 + 20 Then
-                    _storeCategory = StoreCategory.Bonuses : _storeSelectedIndex = 0
-                End If
+            ' ── Geometry must mirror DrawStore layout constants ──────────────────
+            Const PAD_H_HT As Integer = 36, PAD_V_HT As Integer = 28
+            Const HDR_H_HT As Integer = 72, TAB_H_HT As Integer = 52
+            Const HDR_TAB_GAP_HT As Integer = 8, TAB_GRID_GAP_HT As Integer = 20
+            Const FTR_H_HT As Integer = 50, FTR_PAD_HT As Integer = 20
+            Const SB_W_HT As Integer = 14, SB_GAP_HT As Integer = 12
+            Const COL_GAP_HT As Integer = 16, ROW_GAP_HT As Integer = 14
+            Const CARD_H_HT As Integer = 132, BTN_W_HT As Integer = 152, BTN_H_HT As Integer = 42
+
+            Dim PW_HT = CInt(LOGICAL_WIDTH * 0.88)
+            Dim PH_HT = CInt(LOGICAL_HEIGHT * 0.86)
+            Dim px2 = CSng((LOGICAL_WIDTH - PW_HT) / 2)
+            Dim py2 = CSng((LOGICAL_HEIGHT - PH_HT) / 2)
+            Dim innerX_HT = px2 + PAD_H_HT
+            Dim innerW_HT = PW_HT - PAD_H_HT * 2
+
+            Dim hdrBottom_HT = py2 + PAD_V_HT + HDR_H_HT
+            Dim tabY_HT = hdrBottom_HT + HDR_TAB_GAP_HT
+            Dim tabBottom_HT = tabY_HT + TAB_H_HT
+            Dim ftrTop_HT = py2 + PH_HT - FTR_PAD_HT - FTR_H_HT
+            Dim gridTop_HT = tabBottom_HT + TAB_GRID_GAP_HT
+            Dim gridH_HT = Math.Max(1, ftrTop_HT - 8 - gridTop_HT)
+
+            Dim sbGutter_HT = SB_W_HT + SB_GAP_HT
+            Dim gridW_HT = CInt(innerW_HT - sbGutter_HT)
+            Dim cols_HT = If(gridW_HT >= 640, 2, 1)
+            Dim cardW_HT = (gridW_HT - (cols_HT - 1) * COL_GAP_HT) \ cols_HT
+            Dim rowsVisible_HT = Math.Max(1, CInt(Math.Floor((gridH_HT + ROW_GAP_HT) / (CARD_H_HT + ROW_GAP_HT))))
+
+            ' Tab row
+            Const TAB_COUNT_HT As Integer = 3
+            Dim totalTabW_HT = CInt(innerW_HT * 0.88)
+            Dim tabW_HT = (totalTabW_HT - (TAB_COUNT_HT - 1) * 8) \ TAB_COUNT_HT
+            Dim tabsLeft_HT = CSng(innerX_HT + (innerW_HT - totalTabW_HT) / 2)
+            If my >= tabY_HT AndAlso my < tabY_HT + TAB_H_HT Then
+                For ti = 0 To TAB_COUNT_HT - 1
+                    Dim tx = tabsLeft_HT + ti * (tabW_HT + 8)
+                    If mx >= tx AndAlso mx < tx + tabW_HT Then
+                        _storeCategory = CType(ti, StoreCategory)
+                        _storeSelectedIndex = 0
+                        _storeScrollOffset = 0
+                    End If
+                Next
                 Return
             End If
-            ' Item rows
+
+            ' ← MENU button in footer
+            Const MENU_BTN_W_HT As Integer = 110
+            Const MENU_BTN_H_HT As Integer = 32
+            Dim kFtrTop2 = py2 + PH_HT - FTR_PAD_HT - FTR_H_HT
+            Dim menuBtnX2 = CSng(innerX_HT)
+            Dim menuBtnY2 = CSng(kFtrTop2 + (FTR_H_HT - MENU_BTN_H_HT) / 2)
+            If mx >= menuBtnX2 AndAlso mx < menuBtnX2 + MENU_BTN_W_HT AndAlso
+               my >= menuBtnY2 AndAlso my < menuBtnY2 + MENU_BTN_H_HT Then
+                _state = GameState.Menu
+                Return
+            End If
+
+            ' Card grid
             Dim catItems2 = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
-            Dim rowY = py2 + 100.0F
-            For i = 0 To catItems2.Count - 1
-                If my >= rowY AndAlso my < rowY + 58 Then
-                    _storeSelectedIndex = i
-                    Dim sel2 = catItems2(i)
-                    If IsOwned(sel2.Category, sel2.Id) Then
-                        EquipItem(sel2)
-                    Else
-                        PurchaseItem(sel2)
+            Dim totalRows2 = CInt(Math.Ceiling(catItems2.Count / CDbl(cols_HT)))
+            Dim maxScroll2 = Math.Max(0, totalRows2 - rowsVisible_HT)
+            _storeScrollOffset = Math.Max(0, Math.Min(_storeScrollOffset, maxScroll2))
+
+            For rowOff = 0 To rowsVisible_HT - 1
+                Dim rowIdx2 = _storeScrollOffset + rowOff
+                For col2 = 0 To cols_HT - 1
+                    Dim itemIdx2 = rowIdx2 * cols_HT + col2
+                    If itemIdx2 >= catItems2.Count Then Continue For
+                    Dim cx2 = CSng(innerX_HT + col2 * (cardW_HT + COL_GAP_HT))
+                    Dim cy2 = CSng(gridTop_HT + rowOff * (CARD_H_HT + ROW_GAP_HT))
+                    If mx >= cx2 AndAlso mx < cx2 + cardW_HT AndAlso
+                       my >= cy2 AndAlso my < cy2 + CARD_H_HT Then
+                        _storeSelectedIndex = itemIdx2
+                        Dim sel2 = catItems2(itemIdx2)
+                        If IsOwned(sel2.Category, sel2.Id) Then
+                            EquipItem(sel2)
+                        Else
+                            PurchaseItem(sel2)
+                        End If
+                        Return
                     End If
-                    Return
-                End If
-                rowY += 62
+                Next
             Next
             Return
         End If
@@ -2446,13 +2558,21 @@ Public Class Form1
                 Try
                     Dim json = File.ReadAllText(f)
                     Dim data = JsonSerializer.Deserialize(Of StoreSaveData)(json)
+                    Dim nm As String
                     If data IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(data.PlayerName) Then
-                        names.Add(data.PlayerName)
+                        nm = data.PlayerName
                     Else
-                        names.Add(Path.GetFileNameWithoutExtension(f))
+                        nm = Path.GetFileNameWithoutExtension(f)
+                    End If
+                    ' Never expose the dev-mode password as a selectable name
+                    If Not String.Equals(nm, "luffyisking", StringComparison.OrdinalIgnoreCase) Then
+                        names.Add(nm)
                     End If
                 Catch
-                    names.Add(Path.GetFileNameWithoutExtension(f))
+                    Dim fallback = Path.GetFileNameWithoutExtension(f)
+                    If Not String.Equals(fallback, "luffyisking", StringComparison.OrdinalIgnoreCase) Then
+                        names.Add(fallback)
+                    End If
                 End Try
             Next
         Catch
@@ -2751,7 +2871,13 @@ Public Class Form1
         End Using
         Dim cursor = If(_frameCount Mod 60 < 30, "|", " ")
         Dim inputDisplay = If(_nameEntryInput.Length > 0, _nameEntryInput, "")
-        DrawCenteredText(g, inputDisplay & cursor, _fnt18b, Color.White, bby + 8)
+        Dim fullText = inputDisplay & cursor
+        Dim textSz = g.MeasureString(fullText, _fnt18b)
+        Dim textX = CSng(bx + (boxW - textSz.Width) / 2)
+        Dim textY = CSng(bby + (boxH - textSz.Height) / 2)
+        Using tbr As New SolidBrush(Color.White)
+            g.DrawString(fullText, _fnt18b, tbr, textX, textY)
+        End Using
 
         DrawCenteredText(g, "Press ENTER to continue", _fnt12r, Color.FromArgb(140, 160, 200), py + 215)
 
@@ -4610,116 +4736,454 @@ Public Class Form1
         End Using
     End Sub
 
+    ' ── Helper: returns the two gradient colours used to represent a ball skin ──
+    Private Function GetBallPreviewColors(skinId As String) As Color()
+        Select Case skinId
+            Case "fire"   : Return {Color.FromArgb(255, 100, 20), Color.FromArgb(255, 200, 50)}
+            Case "ice"    : Return {Color.FromArgb(100, 200, 255), Color.FromArgb(200, 240, 255)}
+            Case "plasma" : Return {Color.FromArgb(180, 60, 255), Color.FromArgb(240, 160, 255)}
+            Case "gold"   : Return {Color.FromArgb(255, 215, 0), Color.FromArgb(255, 250, 140)}
+            Case "rainbow": Return {Color.FromArgb(255, 80, 80), Color.FromArgb(80, 160, 255)}
+            Case "lava"   : Return {Color.FromArgb(220, 30, 0), Color.FromArgb(255, 140, 40)}
+            Case "void"   : Return {Color.FromArgb(20, 0, 40), Color.FromArgb(80, 0, 120)}
+            Case "toxic"  : Return {Color.FromArgb(60, 220, 0), Color.FromArgb(180, 255, 60)}
+            Case "neon"   : Return {Color.FromArgb(0, 240, 255), Color.FromArgb(160, 255, 255)}
+            Case "crystal": Return {Color.FromArgb(180, 240, 255), Color.FromArgb(255, 255, 255)}
+            Case "shadow" : Return {Color.FromArgb(60, 0, 100), Color.FromArgb(140, 60, 200)}
+            Case "sakura" : Return {Color.FromArgb(255, 160, 200), Color.FromArgb(255, 220, 240)}
+            Case "copper" : Return {Color.FromArgb(180, 100, 40), Color.FromArgb(230, 170, 100)}
+            Case "ocean"  : Return {Color.FromArgb(0, 130, 180), Color.FromArgb(60, 210, 230)}
+            Case "star"   : Return {Color.FromArgb(255, 240, 100), Color.FromArgb(255, 255, 200)}
+            Case "obsidian": Return {Color.FromArgb(30, 20, 40), Color.FromArgb(80, 60, 100)}
+            Case "aurora" : Return {Color.FromArgb(0, 200, 160), Color.FromArgb(160, 80, 255)}
+            Case Else     : Return {Color.FromArgb(220, 230, 255), Color.FromArgb(255, 255, 255)}
+        End Select
+    End Function
+
+    ' ── Helper: returns a representative 4-colour brick-row sample for a palette ──
+    Private Function GetBrickPaletteSample(paletteId As String) As Color()
+        Dim pal As Color()() = Nothing
+        Dim savedId = _activeBrickPalette
+        _activeBrickPalette = paletteId
+        pal = GetBrickPalette()
+        _activeBrickPalette = savedId
+        Return {pal(0)(0), pal(2)(0), pal(4)(0), pal(6)(0)}
+    End Function
+
+    ' ── Helper: returns the icon character and colour for a bonus-pack preview ──
+    Private Function GetBonusPreview(bonusId As String) As (Symbol As String, Clr As Color)
+        Select Case bonusId
+            Case "base"     : Return (ChrW(&H2605) & ChrW(&H25C6), Color.FromArgb(255, 220, 60))  ' ★◆  Classic
+            Case "ninja"    : Return (ChrW(&H2726) & ChrW(&H22C6), Color.FromArgb(80, 100, 140))  ' ✦⋆  Ninja
+            Case "space"    : Return (ChrW(&H25CE) & ChrW(&H2605), Color.FromArgb(80, 140, 255))  ' ◎★  Space
+            Case "candy"    : Return (ChrW(&H2665) & ChrW(&H25CF), Color.FromArgb(255, 110, 180)) ' ♥●  Candy
+            Case "cyber"    : Return (ChrW(&H26A1) & ChrW(&H25A0), Color.FromArgb(0, 220, 255))   ' ⚡■  Cyber
+            Case "medieval" : Return (ChrW(&H2720) & ChrW(&H25C6), Color.FromArgb(200, 160, 60))  ' ✠◆  Medieval
+            Case "ocean"    : Return (ChrW(&H223C) & ChrW(&H25CB), Color.FromArgb(60, 180, 255))  ' ∼○  Ocean
+            Case "retro"    : Return (ChrW(&H25A0) & ChrW(&H25AA), Color.FromArgb(120, 255, 120)) ' ■▪  Retro
+            Case "magic"    : Return (ChrW(&H2727) & ChrW(&H2726), Color.FromArgb(200, 80, 255))  ' ✧✦  Magic
+            Case "dragon"   : Return (ChrW(&H25C6) & ChrW(&H2605), Color.FromArgb(255, 80, 40))   ' ◆★  Dragon
+            Case "sakura"   : Return (ChrW(&H25CF) & ChrW(&H2665), Color.FromArgb(255, 160, 210)) ' ●♥  Sakura
+            Case "robot"    : Return (ChrW(&H2699) & ChrW(&H25A0), Color.FromArgb(160, 200, 220)) ' ⚙■  Robot
+            Case "pirate"   : Return (ChrW(&H2620) & ChrW(&H25C6), Color.FromArgb(200, 200, 200)) ' ☠◆  Pirate
+            Case "galaxy"   : Return (ChrW(&H273A) & ChrW(&H2605), Color.FromArgb(160, 80, 255))  ' ✺★  Galaxy
+            Case "festival" : Return (ChrW(&H272A) & ChrW(&H2665), Color.FromArgb(255, 130, 60))  ' ✪♥  Festival
+            Case "horror"   : Return (ChrW(&H2620) & ChrW(&H2726), Color.FromArgb(160, 60, 200))  ' ☠✦  Horror
+            Case "golden"   : Return (ChrW(&H25C6) & ChrW(&H25C6), Color.FromArgb(255, 200, 40))  ' ◆◆  Golden
+            Case Else       : Return (ChrW(&H2605), Color.FromArgb(255, 220, 80))
+        End Select
+    End Function
+
+    ' ─────────────────────────────────────────────────────────────────────────────
+    '  DrawStore  — scrollable card-based store with visual item previews
+    ' ─────────────────────────────────────────────────────────────────────────────
     Private Sub DrawStore(g As Graphics)
         DrawStarField(g)
         Using br As New SolidBrush(Color.FromArgb(210, 0, 0, 20))
             g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
         End Using
 
-        Dim pw = 760, ph = 560
-        Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+        ' ── Layout constants ────────────────────────────────────────────────────
+        ' Panel: 88% wide, 86% tall, centered
+        Const PAD_H As Integer = 36        ' inner left/right padding
+        Const PAD_V As Integer = 28        ' inner top/bottom padding
+        Const HDR_H As Integer = 72        ' header height
+        Const TAB_H As Integer = 52        ' tab row height
+        Const HDR_TAB_GAP As Integer = 8   ' gap between header bottom and tab top
+        Const TAB_GRID_GAP As Integer = 20 ' gap between tab bottom and first card row
+        Const FTR_H As Integer = 50        ' footer height
+        Const FTR_PAD As Integer = 20      ' extra bottom padding above panel border
+        Const SB_W As Integer = 14         ' scrollbar width
+        Const SB_GAP As Integer = 12       ' gap between grid and scrollbar
+        Const COL_GAP As Integer = 16      ' column gap
+        Const ROW_GAP As Integer = 14      ' row gap
+        Const CARD_H As Integer = 132      ' card height
+        Const ICON_SZ As Integer = 80      ' icon preview size
+        Const ICON_PAD As Integer = 14     ' padding inside card before icon
+        Const BTN_W As Integer = 152       ' button width
+        Const BTN_H As Integer = 42        ' button height
 
-        Using br As New SolidBrush(Color.FromArgb(245, 12, 12, 35))
-            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+        Dim PW = CInt(LOGICAL_WIDTH * 0.88)
+        Dim PH = CInt(LOGICAL_HEIGHT * 0.86)
+        Dim px = CSng((LOGICAL_WIDTH - PW) / 2)
+        Dim py = CSng((LOGICAL_HEIGHT - PH) / 2)
+
+        ' Panel background + border
+        Using br As New SolidBrush(Color.FromArgb(248, 10, 10, 32))
+            Using rr = RoundedRect(New RectangleF(px, py, PW, PH), 16)
                 g.FillPath(br, rr)
             End Using
         End Using
-        Using pen As New Pen(Color.FromArgb(100, 255, 200, 50), 2)
-            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+        Using pen As New Pen(Color.FromArgb(140, 255, 200, 50), 2)
+            Using rr = RoundedRect(New RectangleF(px, py, PW, PH), 16)
                 g.DrawPath(pen, rr)
             End Using
         End Using
 
-        ' Title + balance
-        Dim storeBalanceText = If(_devMode, $"{ChrW(&H25C6)} STORE  —  DEV MODE  {ChrW(&H25C6)}", $"{ChrW(&H25C6)} STORE  —  Balance: {_coinBalance} coins")
-        Dim storeBalanceColor = If(_devMode, Color.FromArgb(100, 255, 100), Color.FromArgb(255, 220, 60))
-        DrawCenteredText(g, storeBalanceText, _fnt22b, storeBalanceColor, py + 10)
+        ' ── Slice layout ────────────────────────────────────────────────────────
+        Dim innerX = px + PAD_H
+        Dim innerW = PW - PAD_H * 2
+        Dim innerTop = py + PAD_V
 
-        ' Category tabs
+        ' HeaderRegion
+        Dim hdrY = innerTop
+        Dim hdrBottom = hdrY + HDR_H
+
+        ' TabRegion
+        Dim tabY = hdrBottom + HDR_TAB_GAP
+        Dim tabBottom = tabY + TAB_H
+
+        ' FooterRegion (sliced from bottom)
+        Dim ftrBottom = py + PH - FTR_PAD
+        Dim ftrTop = ftrBottom - FTR_H
+
+        ' ContentRegion (between tabs and footer)
+        Dim gridTop = tabBottom + TAB_GRID_GAP
+        Dim gridBottom = ftrTop - 8         ' 8 px cushion above footer
+        Dim gridH = gridBottom - gridTop
+        If gridH < 1 Then gridH = 1
+
+        ' ── Header ──────────────────────────────────────────────────────────────
+        Dim titleTxt = If(_devMode,
+            ChrW(&H25C6) & " STORE — DEV MODE (unlimited coins) " & ChrW(&H25C6),
+            ChrW(&H25C6) & $" STORE  —  Balance: {_coinBalance} coins  " & ChrW(&H25C6))
+        Dim titleClr = If(_devMode, Color.FromArgb(100, 255, 100), Color.FromArgb(255, 220, 60))
+        ' Fit title font to available width
+        Dim titleFontSz = 18.0F
+        Do While titleFontSz > 10
+            Dim testFont As New Font("Segoe UI", titleFontSz, FontStyle.Bold, GraphicsUnit.Pixel)
+            Dim tw = g.MeasureString(titleTxt, testFont).Width
+            testFont.Dispose()
+            If tw <= innerW - 20 Then Exit Do
+            titleFontSz -= 1
+        Loop
+        Using titleFont As New Font("Segoe UI", titleFontSz, FontStyle.Bold, GraphicsUnit.Pixel)
+            Dim tsz = g.MeasureString(titleTxt, titleFont)
+            Using tbr As New SolidBrush(titleClr)
+                g.DrawString(titleTxt, titleFont, tbr,
+                             CSng(innerX + (innerW - tsz.Width) / 2),
+                             CSng(hdrY + (HDR_H - tsz.Height) / 2))
+            End Using
+        End Using
+
+        ' ── Category tabs ───────────────────────────────────────────────────────
         Dim categories() As StoreCategory = {StoreCategory.Balls, StoreCategory.Bricks, StoreCategory.Bonuses}
-        Dim catNames() As String = {"Balls", "Bricks", "Bonuses"}
-        Dim tabY = py + 50
-        Dim tabW = 200, tabH = 32
-        Dim tabStartX = px + 30
-        For ti = 0 To 2
-            Dim tx = tabStartX + ti * (tabW + 10)
-            Dim isActive = _storeCategory = categories(ti)
-            Using br As New SolidBrush(If(isActive, Color.FromArgb(200, 255, 200, 50), Color.FromArgb(60, 150, 150, 200)))
-                Using rr = RoundedRect(New RectangleF(tx, tabY, tabW, tabH), 6)
-                    g.FillPath(br, rr)
+        Dim catLabels() As String = {ChrW(&H25CF) & " BALLS", ChrW(&H25A0) & " BRICKS", ChrW(&H25C6) & " BONUSES"}
+        Const TAB_COUNT As Integer = 3
+        Dim totalTabW = CInt(innerW * 0.88)   ' tabs span 88% of inner width
+        Dim tabW = (totalTabW - (TAB_COUNT - 1) * 8) \ TAB_COUNT
+        Dim tabsLeft = CSng(innerX + (innerW - totalTabW) / 2)
+        For ti = 0 To TAB_COUNT - 1
+            Dim tx = tabsLeft + ti * (tabW + 8)
+            Dim isActive = (_storeCategory = categories(ti))
+            Dim tabFill As Color = If(isActive, Color.FromArgb(220, 255, 200, 50), Color.FromArgb(50, 120, 120, 180))
+            Using tbr As New SolidBrush(tabFill)
+                Using rr = RoundedRect(New RectangleF(tx, tabY, tabW, TAB_H), 8)
+                    g.FillPath(tbr, rr)
                 End Using
             End Using
-            Dim tc = If(isActive, Color.FromArgb(20, 20, 20), Color.FromArgb(200, 200, 220))
-            Dim tsz = g.MeasureString(catNames(ti), _fnt12b)
-            Using tbr As New SolidBrush(tc)
-                g.DrawString(catNames(ti), _fnt12b, tbr, tx + (tabW - tsz.Width) / 2, tabY + (tabH - tsz.Height) / 2)
-            End Using
-        Next
-
-        ' Item list
-        Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
-        Dim rowY = py + 100.0F
-        For i = 0 To catItems.Count - 1
-            Dim item = catItems(i)
-            Dim owned = IsOwned(item.Category, item.Id)
-            Dim equipped = (item.Category = StoreCategory.Balls AndAlso _activeBallSkin = item.Id) OrElse
-                           (item.Category = StoreCategory.Bricks AndAlso _activeBrickPalette = item.Id) OrElse
-                           (item.Category = StoreCategory.Bonuses AndAlso _activeBonusPack = item.Id)
-            Dim isSelected = _storeSelectedIndex = i
-            Dim rowColor As Color
-            If equipped Then
-                rowColor = Color.FromArgb(50, 80, 255, 80)
-            ElseIf owned Then
-                rowColor = Color.FromArgb(40, 100, 180, 255)
-            ElseIf isSelected Then
-                rowColor = Color.FromArgb(40, 255, 220, 80)
-            Else
-                rowColor = Color.FromArgb(30, 255, 255, 255)
-            End If
-            Using br As New SolidBrush(rowColor)
-                Using rr = RoundedRect(New RectangleF(px + 20, rowY, pw - 40, 56), 8)
-                    g.FillPath(br, rr)
-                End Using
-            End Using
-            If isSelected Then
-                Using pen As New Pen(Color.FromArgb(200, 255, 220, 80), 2)
-                    Using rr = RoundedRect(New RectangleF(px + 20, rowY, pw - 40, 56), 8)
+            If isActive Then
+                Using pen As New Pen(Color.FromArgb(180, 255, 220, 60), 2)
+                    Using rr = RoundedRect(New RectangleF(tx, tabY, tabW, TAB_H), 8)
                         g.DrawPath(pen, rr)
                     End Using
                 End Using
             End If
-            ' Name + description
-            Dim nameColor = If(equipped, Color.FromArgb(120, 255, 120), If(owned, Color.White, Color.FromArgb(200, 200, 200)))
-            Using tbr As New SolidBrush(nameColor)
-                g.DrawString(item.Name, _fnt13b, tbr, px + 36, rowY + 6)
+            Dim tc = If(isActive, Color.FromArgb(20, 20, 20), Color.FromArgb(200, 200, 230))
+            Dim fnt = If(isActive, _fnt14b, _fnt13b)
+            Dim tsz2 = g.MeasureString(catLabels(ti), fnt)
+            Using tbr As New SolidBrush(tc)
+                g.DrawString(catLabels(ti), fnt, tbr,
+                             CSng(tx + (tabW - tsz2.Width) / 2),
+                             CSng(tabY + (TAB_H - tsz2.Height) / 2))
             End Using
-            Using tbr As New SolidBrush(Color.FromArgb(160, 170, 190))
-                g.DrawString(item.Description, _fnt11r, tbr, px + 36, rowY + 28)
-            End Using
-            ' Status badge (right side)
-            Dim badgeText As String
-            Dim badgeColor As Color
-            If equipped Then
-                badgeText = "EQUIPPED" : badgeColor = Color.FromArgb(80, 220, 80)
-            ElseIf owned Then
-                badgeText = "EQUIP" : badgeColor = Color.FromArgb(100, 200, 255)
-            ElseIf _coinBalance >= item.Price Then
-                badgeText = $"BUY {item.Price}" & ChrW(&H25C6) : badgeColor = Color.FromArgb(255, 220, 60)
-            Else
-                badgeText = $"{item.Price}" & ChrW(&H25C6) : badgeColor = Color.FromArgb(180, 80, 80)
-            End If
-            Dim bsz = g.MeasureString(badgeText, _fnt12b)
-            Dim bx = px + pw - 40 - bsz.Width
-            Using tbr As New SolidBrush(badgeColor)
-                g.DrawString(badgeText, _fnt12b, tbr, bx, rowY + (56 - bsz.Height) / 2)
-            End Using
-            rowY += 62
         Next
 
-        DrawCenteredText(g, ChrW(&H2191) & ChrW(&H2193) & " Navigate   ENTER Buy/Equip   " & ChrW(&H2190) & ChrW(&H2192) & " Category   ESC Close", _fnt11r, Color.FromArgb(130, 130, 155), py + ph - 28)
+        ' ── Content area clip ───────────────────────────────────────────────────
+        ' Reserve scrollbar gutter on the right
+        Dim sbGutter = SB_W + SB_GAP
+        Dim gridW = CInt(innerW - sbGutter)
+
+        ' Compute column count (1 or 2)
+        Dim cols = If(gridW >= 640, 2, 1)
+        Dim cardW = (gridW - (cols - 1) * COL_GAP) \ cols
+
+        ' Visible rows that fit inside gridH
+        Dim rowsVisible = Math.Max(1, CInt(Math.Floor((gridH + ROW_GAP) / (CARD_H + ROW_GAP))))
+
+        Dim catItems = _storeItems.Where(Function(it) it.Category = _storeCategory).ToList()
+        Dim totalRows = CInt(Math.Ceiling(catItems.Count / CDbl(cols)))
+        Dim maxScroll = Math.Max(0, totalRows - rowsVisible)
+        _storeScrollOffset = Math.Max(0, Math.Min(_storeScrollOffset, maxScroll))
+
+        Dim clipRect As New RectangleF(CSng(innerX) - 2, gridTop - 2, gridW + sbGutter + 4, gridH + 4)
+        g.SetClip(clipRect)
+
+        ' ── Card grid ───────────────────────────────────────────────────────────
+        For rowOffset = 0 To rowsVisible - 1
+            Dim rowIdx = _storeScrollOffset + rowOffset
+            For col = 0 To cols - 1
+                Dim itemIdx = rowIdx * cols + col
+                If itemIdx >= catItems.Count Then Continue For
+
+                Dim item = catItems(itemIdx)
+                Dim owned = IsOwned(item.Category, item.Id)
+                Dim equipped = (item.Category = StoreCategory.Balls AndAlso _activeBallSkin = item.Id) OrElse
+                               (item.Category = StoreCategory.Bricks AndAlso _activeBrickPalette = item.Id) OrElse
+                               (item.Category = StoreCategory.Bonuses AndAlso _activeBonusPack = item.Id)
+                Dim isSelected = (_storeSelectedIndex = itemIdx)
+
+                Dim cx = CSng(innerX + col * (cardW + COL_GAP))
+                Dim cardY = CSng(gridTop + rowOffset * (CARD_H + ROW_GAP))
+
+                ' Card background
+                Dim cardBg As Color
+                If equipped Then
+                    cardBg = Color.FromArgb(55, 60, 255, 80)
+                ElseIf owned Then
+                    cardBg = Color.FromArgb(45, 60, 160, 255)
+                ElseIf isSelected Then
+                    cardBg = Color.FromArgb(50, 255, 220, 60)
+                Else
+                    cardBg = Color.FromArgb(30, 200, 200, 255)
+                End If
+                Using br As New SolidBrush(cardBg)
+                    Using rr = RoundedRect(New RectangleF(cx, cardY, cardW, CARD_H), 10)
+                        g.FillPath(br, rr)
+                    End Using
+                End Using
+                If isSelected OrElse equipped Then
+                    Dim borderClr = If(equipped, Color.FromArgb(200, 80, 255, 100), Color.FromArgb(200, 255, 220, 60))
+                    Using pen As New Pen(borderClr, If(equipped, 2.5F, 2.0F))
+                        Using rr = RoundedRect(New RectangleF(cx, cardY, cardW, CARD_H), 10)
+                            g.DrawPath(pen, rr)
+                        End Using
+                    End Using
+                End If
+
+                ' ── Preview icon (left side) ───────────────────────────────────
+                Dim pvX = cx + ICON_PAD
+                Dim pvY = cardY + (CARD_H - ICON_SZ) / 2
+                Dim pvRect As New RectangleF(pvX, pvY, ICON_SZ, ICON_SZ)
+                Using br As New SolidBrush(Color.FromArgb(80, 0, 0, 20))
+                    Using rr = RoundedRect(pvRect, 8)
+                        g.FillPath(br, rr)
+                    End Using
+                End Using
+                Using pen As New Pen(Color.FromArgb(60, 255, 255, 255), 1)
+                    Using rr = RoundedRect(pvRect, 8)
+                        g.DrawPath(pen, rr)
+                    End Using
+                End Using
+                Dim pvCx = pvX + ICON_SZ / 2
+                Dim pvCy = pvY + ICON_SZ / 2
+
+                Select Case item.Category
+                    Case StoreCategory.Balls
+                        Dim cols2 = GetBallPreviewColors(item.Id)
+                        Dim bRad = ICON_SZ * 0.38F
+                        Using br As New SolidBrush(Color.FromArgb(40, cols2(0)))
+                            g.FillEllipse(br, CSng(pvCx - bRad * 1.4F), CSng(pvCy - bRad * 1.4F), bRad * 2.8F, bRad * 2.8F)
+                        End Using
+                        Using grd As New Drawing2D.LinearGradientBrush(
+                                New PointF(pvCx - bRad, pvCy - bRad),
+                                New PointF(pvCx + bRad, pvCy + bRad),
+                                cols2(0), cols2(1))
+                            g.FillEllipse(grd, CSng(pvCx - bRad), CSng(pvCy - bRad), bRad * 2, bRad * 2)
+                        End Using
+                        Using br As New SolidBrush(Color.FromArgb(140, 255, 255, 255))
+                            g.FillEllipse(br, CSng(pvCx - bRad * 0.55F), CSng(pvCy - bRad * 0.55F), bRad * 0.5F, bRad * 0.4F)
+                        End Using
+
+                    Case StoreCategory.Bricks
+                        Dim sample = GetBrickPaletteSample(item.Id)
+                        Dim bw2 = CSng(ICON_SZ - 10) / 2
+                        For ri = 0 To 1
+                            For ci2 = 0 To 1
+                                Dim sampleIdx = ri * 2 + ci2
+                                Dim bx2 = pvX + 5 + ci2 * (bw2 + 3)
+                                Dim by2 = pvY + (ICON_SZ - bw2 * 2 - 3) / 2 + ri * (bw2 + 3)
+                                Dim c1 = If(sampleIdx < sample.Length, sample(sampleIdx), sample(0))
+                                Dim c2 = Color.FromArgb(Math.Min(255, c1.R + 40), Math.Min(255, c1.G + 40), Math.Min(255, c1.B + 40))
+                                Using grd As New Drawing2D.LinearGradientBrush(
+                                        New PointF(bx2, by2), New PointF(bx2, by2 + bw2), c1, c2)
+                                    Using rr2 = RoundedRect(New RectangleF(bx2, by2, bw2, bw2), 3)
+                                        g.FillPath(grd, rr2)
+                                    End Using
+                                End Using
+                                Using br As New SolidBrush(Color.FromArgb(60, 255, 255, 255))
+                                    g.FillRectangle(br, CSng(bx2 + 2), CSng(by2 + 2), bw2 - 4, bw2 * 0.3F)
+                                End Using
+                            Next
+                        Next
+
+                    Case StoreCategory.Bonuses
+                        Dim bp = GetBonusPreview(item.Id)
+                        Dim iconFont As New Font("Segoe UI", 26, FontStyle.Bold, GraphicsUnit.Pixel)
+                        Dim iconSz = g.MeasureString(bp.Symbol, iconFont)
+                        Using br As New SolidBrush(bp.Clr)
+                            g.DrawString(bp.Symbol, iconFont, br,
+                                         CSng(pvCx - iconSz.Width / 2),
+                                         CSng(pvCy - iconSz.Height / 2))
+                        End Using
+                        iconFont.Dispose()
+                End Select
+
+                ' ── Text area ─────────────────────────────────────────────────
+                ' Text starts after icon; ends before button area
+                Dim txtX = CSng(pvX + ICON_SZ + 16)
+                Dim btnAreaW = BTN_W + 12          ' reserved right zone for button
+                Dim txtW = CSng(cardW - ICON_SZ - ICON_PAD - 16 - btnAreaW)
+                Dim nameClr = If(equipped, Color.FromArgb(100, 255, 100),
+                               If(owned, Color.White, Color.FromArgb(210, 210, 220)))
+                Using br As New SolidBrush(nameClr)
+                    Using sf As New StringFormat()
+                        sf.Trimming = StringTrimming.EllipsisCharacter
+                        sf.FormatFlags = StringFormatFlags.NoWrap
+                        g.DrawString(item.Name, _fnt14b, br,
+                                     New RectangleF(txtX, cardY + 8, txtW, 34), sf)
+                    End Using
+                End Using
+                Using br As New SolidBrush(Color.FromArgb(155, 170, 195))
+                    Using sf As New StringFormat()
+                        sf.Trimming = StringTrimming.EllipsisWord
+                        g.DrawString(item.Description, _fnt11r, br,
+                                     New RectangleF(txtX, cardY + 46, txtW, 60), sf)
+                    End Using
+                End Using
+
+                ' ── Buy/Equip button (vertically centered right side) ──────────
+                Dim btnX = CSng(cx + cardW - BTN_W - 12)
+                Dim btnY = CSng(cardY + (CARD_H - BTN_H) / 2)
+                Dim badgeText As String
+                Dim badgeClr As Color
+                If equipped Then
+                    badgeText = ChrW(&H2713) & " EQUIPPED" : badgeClr = Color.FromArgb(80, 220, 80)
+                ElseIf owned Then
+                    badgeText = ChrW(&H25B6) & " EQUIP" : badgeClr = Color.FromArgb(100, 200, 255)
+                ElseIf _devMode OrElse _coinBalance >= item.Price Then
+                    badgeText = $"BUY  {item.Price}" & ChrW(&H25C6) : badgeClr = Color.FromArgb(255, 220, 60)
+                Else
+                    badgeText = $"{item.Price}" & ChrW(&H25C6) & " LOCKED" : badgeClr = Color.FromArgb(180, 80, 80)
+                End If
+                Using br As New SolidBrush(Color.FromArgb(90, badgeClr))
+                    Using rr = RoundedRect(New RectangleF(btnX, btnY, BTN_W, BTN_H), 6)
+                        g.FillPath(br, rr)
+                    End Using
+                End Using
+                Using pen As New Pen(Color.FromArgb(160, badgeClr), 1.5F)
+                    Using rr = RoundedRect(New RectangleF(btnX, btnY, BTN_W, BTN_H), 6)
+                        g.DrawPath(pen, rr)
+                    End Using
+                End Using
+                Dim bsz = g.MeasureString(badgeText, _fnt12b)
+                Using tbr As New SolidBrush(badgeClr)
+                    g.DrawString(badgeText, _fnt12b, tbr,
+                                 CSng(btnX + (BTN_W - bsz.Width) / 2),
+                                 CSng(btnY + (BTN_H - bsz.Height) / 2))
+                End Using
+            Next
+        Next
+
+        g.ResetClip()
+
+        ' ── Scrollbar ───────────────────────────────────────────────────────────
+        If totalRows > rowsVisible Then
+            Dim sbX = CSng(innerX + gridW + SB_GAP)
+            Dim sbH = CSng(gridH)
+            Dim sbY = CSng(gridTop)
+            ' Track
+            Using br As New SolidBrush(Color.FromArgb(40, 200, 200, 255))
+                Using rr = RoundedRect(New RectangleF(sbX, sbY, SB_W, sbH), 4)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            ' Thumb
+            Dim thumbH = Math.Max(20, sbH * rowsVisible / totalRows)
+            Dim thumbY = sbY + (sbH - thumbH) * _storeScrollOffset / Math.Max(1, maxScroll)
+            Using br As New SolidBrush(Color.FromArgb(180, 255, 200, 60))
+                Using rr = RoundedRect(New RectangleF(sbX, CSng(thumbY), SB_W, CSng(thumbH)), 4)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            ' Arrows
+            Using tbr As New SolidBrush(Color.FromArgb(180, 255, 220, 60))
+                If _storeScrollOffset > 0 Then
+                    g.DrawString(ChrW(&H25B2), _fnt12b, tbr, sbX, sbY - 18)
+                End If
+                If _storeScrollOffset < maxScroll Then
+                    g.DrawString(ChrW(&H25BC), _fnt12b, tbr, sbX, CSng(sbY + sbH + 2))
+                End If
+            End Using
+        End If
+
+        ' ── Footer ──────────────────────────────────────────────────────────────
+        ' "← MENU" button on the left of the footer
+        Const MENU_BTN_W As Integer = 110
+        Const MENU_BTN_H As Integer = 32
+        Dim menuBtnX = CSng(innerX)
+        Dim menuBtnY = CSng(ftrTop + (FTR_H - MENU_BTN_H) / 2)
+        Using menuBg As New SolidBrush(Color.FromArgb(180, 70, 80, 160))
+            Using rr = RoundedRect(New RectangleF(menuBtnX, menuBtnY, MENU_BTN_W, MENU_BTN_H), 8)
+                g.FillPath(menuBg, rr)
+            End Using
+        End Using
+        Using menuPen As New Pen(Color.FromArgb(200, 120, 140, 255), 1.5F)
+            Using rr = RoundedRect(New RectangleF(menuBtnX, menuBtnY, MENU_BTN_W, MENU_BTN_H), 8)
+                g.DrawPath(menuPen, rr)
+            End Using
+        End Using
+        Using menuFnt As New Font("Segoe UI", 11, FontStyle.Bold, GraphicsUnit.Pixel)
+            Dim lbl = ChrW(&H2190) & " MENU"
+            Dim lsz = g.MeasureString(lbl, menuFnt)
+            Using mbr As New SolidBrush(Color.FromArgb(220, 200, 220, 255))
+                g.DrawString(lbl, menuFnt, mbr,
+                             CSng(menuBtnX + (MENU_BTN_W - lsz.Width) / 2),
+                             CSng(menuBtnY + (MENU_BTN_H - lsz.Height) / 2))
+            End Using
+        End Using
+
+        Dim footerTxt = ChrW(&H2191) & ChrW(&H2193) & " Navigate   ENTER Buy/Equip   " &
+                        ChrW(&H2190) & ChrW(&H2192) & " Category   Scroll wheel   ESC Close"
+        Dim ftrFontSz = 11.0F
+        Dim ftrAvailW = innerW - MENU_BTN_W - 16
+        Do While ftrFontSz > 8
+            Dim tf As New Font("Segoe UI", ftrFontSz, GraphicsUnit.Pixel)
+            If g.MeasureString(footerTxt, tf).Width <= ftrAvailW Then tf.Dispose() : Exit Do
+            tf.Dispose() : ftrFontSz -= 0.5F
+        Loop
+        Using ftrFont As New Font("Segoe UI", ftrFontSz, GraphicsUnit.Pixel)
+            Dim fsz = g.MeasureString(footerTxt, ftrFont)
+            Using fbr As New SolidBrush(Color.FromArgb(120, 130, 155))
+                g.DrawString(footerTxt, ftrFont, fbr,
+                             CSng(innerX + MENU_BTN_W + 16 + (ftrAvailW - fsz.Width) / 2),
+                             CSng(ftrTop + (FTR_H - fsz.Height) / 2))
+            End Using
+        End Using
     End Sub
 
-    Private Sub DrawGameOverScreen(g As Graphics)
+
+        Private Sub DrawGameOverScreen(g As Graphics)
         ' Semi-transparent dark overlay over frozen game
         Using br As New SolidBrush(Color.FromArgb(185, 0, 0, 10))
             g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
