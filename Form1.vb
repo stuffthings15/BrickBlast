@@ -78,7 +78,8 @@ Public Class Form1
             If _usingHighScoreMusic Then
                 ScheduleHighScoreMusicStart(10)
             Else
-                _musicStyle = (_musicStyle + 1) Mod 10
+                Dim trackCount = If(_musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0, _musicFiles.Length, 6)
+                _musicStyle = (_musicStyle + 1) Mod trackCount
                 ScheduleMusicStart(10)
             End If
         End If
@@ -307,10 +308,8 @@ Public Class Form1
     Private _colorblindSymbols() As String = {ChrW(&H25A0), ChrW(&H25B2), ChrW(&H25CF), ChrW(&H2666), ChrW(&H2605), ChrW(&H25C6), ChrW(&H2663)}
 
     Private _musicStyleNames() As String = {
-        "Style 1", "Style 2", "Style 3", "Style 4",
-        "Style 5", "Style 6", "Style 7", "Style 8",
-        "Style 9", "Style 10",
-        "Style 11", "Style 12", "Style 13", "Style 14", "Style 15"}
+        "Brick Blast", "Calculated Impact", "Machine Precision",
+        "Machine", "Pinball Dream", "Pinball"}
 
     Private _sfxStyleNames() As String = {"Classic", "Style B", "Style C", "Style D", "Retro Arcade"}
 
@@ -1784,32 +1783,29 @@ Public Class Form1
 
     Private Sub PreGenerateAllMusic()
         Try
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v4")
-            If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
-            ReDim _musicFiles(9)
-            For i = 0 To 9
-                _musicFiles(i) = Path.Combine(tmpDir, $"style_{i}.mid")
-                Dim oldStyle = _musicStyle
-                _musicStyle = i
-                File.WriteAllBytes(_musicFiles(i), GenerateMidiBytes())
-                _musicStyle = oldStyle
+            Dim audioDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Audio")
+            Dim trackNames() As String = {
+                "Brick Blast.mp3", "Calculated Impact.mp3", "Machine Precision.mp3",
+                "Machine.mp3", "pinball dream.mp3", "pinball.mp3"
+            }
+            ReDim _musicFiles(trackNames.Length - 1)
+            For i = 0 To trackNames.Length - 1
+                Dim p = Path.Combine(audioDir, trackNames(i))
+                _musicFiles(i) = If(File.Exists(p), p, "")
             Next
+            If _musicStyle >= _musicFiles.Length Then _musicStyle = 0
             _musicTempFile = _musicFiles(_musicStyle)
         Catch
         End Try
     End Sub
 
     Private Sub RegenerateCurrentMusicFile()
+        ' MP3 tracks are static files — just re-point and restart.
         Try
             If _musicFiles Is Nothing Then Return
             If _musicStyle < 0 OrElse _musicStyle >= _musicFiles.Length Then Return
-            Dim path = _musicFiles(_musicStyle)
-            If String.IsNullOrEmpty(path) Then Return
-            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-            _musicPlaying = False
-            File.WriteAllBytes(path, GenerateMidiBytes())
-            _musicTempFile = path
+            _musicTempFile = _musicFiles(_musicStyle)
+            ChangeMusic()
         Catch
         End Try
     End Sub
@@ -1899,10 +1895,13 @@ Public Class Form1
                 _musicChangeTimer.Dispose()
                 _musicChangeTimer = Nothing
             End If
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v4")
-            If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
-            _highScoreMusicFile = Path.Combine(tmpDir, "highscore.mid")
-            File.WriteAllBytes(_highScoreMusicFile, GenerateHighScoreMidiBytes())
+            Dim audioDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Audio")
+            _highScoreMusicFile = Path.Combine(audioDir, "Brick Blast.mp3")
+            If Not File.Exists(_highScoreMusicFile) Then
+                ' Fall back to first available track
+                _highScoreMusicFile = If(_musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0, _musicFiles(0), "")
+            End If
+            If String.IsNullOrEmpty(_highScoreMusicFile) Then Return
             mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
             mciSendString("open """ & _highScoreMusicFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
@@ -1936,17 +1935,6 @@ Public Class Form1
     Private Sub CleanupMusic()
         Try
             StopMusic()
-            If _musicFiles IsNot Nothing Then
-                For Each f In _musicFiles
-                    If Not String.IsNullOrEmpty(f) AndAlso File.Exists(f) Then
-                        Try : File.Delete(f) : Catch : End Try
-                    End If
-                Next
-            End If
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_music_v4")
-            If Directory.Exists(tmpDir) Then
-                Try : Directory.Delete(tmpDir, True) : Catch : End Try
-            End If
         Catch
         End Try
     End Sub

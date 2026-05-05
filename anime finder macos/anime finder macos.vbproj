@@ -22,10 +22,15 @@
     <PackageReference Include="Avalonia.Desktop"       Version="11.2.5" />
     <PackageReference Include="Avalonia.Fonts.Inter"   Version="11.2.5" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.5" />
+    <PackageReference Include="Tmds.DBus.Protocol"     Version="0.21.3" />
   </ItemGroup>
   <ItemGroup>
     <None Update="Assets\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <Content Include="..\Assets\Audio\*.mp3">
+      <Link>Assets\Audio\%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

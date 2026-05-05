@@ -65,14 +65,25 @@ Namespace BrickBlastMacOS
         ' ── Constructor ───────────────────────────────────────────────────────
         Public Sub New()
             Focusable = True
-            AddHandler Loaded, AddressOf HandleLoaded
+            AddHandler Loaded,   AddressOf HandleLoaded
+            AddHandler Unloaded, AddressOf HandleUnloaded
         End Sub
 
         Private Sub HandleLoaded(sender As Object, e As Avalonia.Interactivity.RoutedEventArgs)
             InitStarField()
+            InitMusic()
+            StartMusic()
             _timer = New DispatcherTimer With {.Interval = TimeSpan.FromMilliseconds(16)}
             AddHandler _timer.Tick, AddressOf OnTick
             _timer.Start()
+        End Sub
+
+        Private Sub HandleUnloaded(sender As Object, e As Avalonia.Interactivity.RoutedEventArgs)
+            StopMusic()
+            If _timer IsNot Nothing Then
+                _timer.Stop()
+                _timer = Nothing
+            End If
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════════
@@ -228,20 +239,75 @@ Namespace BrickBlastMacOS
             End If
         End Sub
 
+        ' ── Music state ───────────────────────────────────────────────────────
+        Private _musicProcess As Process = Nothing
+        Private _musicFiles() As String = Nothing
+        Private _musicStyle As Integer = 0
+
         ' ══════════════════════════════════════════════════════════════════════
-        '  SOUND  (macOS: afplay subprocess instead of winmm.dll)
+        '  SOUND  (macOS: afplay / Linux: mpg123)
         ' ══════════════════════════════════════════════════════════════════════
         ''' <summary>Play a WAV file asynchronously via macOS afplay command.</summary>
         Private Shared Sub PlayWav(wavPath As String)
             If Not File.Exists(wavPath) Then Return
             Try
                 Process.Start(New ProcessStartInfo("afplay", $"""{wavPath}""") With {
-                    .UseShellExecute  = False,
-                    .CreateNoWindow   = True
+                    .UseShellExecute = False,
+                    .CreateNoWindow  = True
                 })
             Catch
-                ' Silent fail — afplay not available or path invalid
             End Try
+        End Sub
+
+        Private Sub InitMusic()
+            Dim audioDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Audio")
+            Dim names() As String = {
+                "Brick Blast.mp3", "Calculated Impact.mp3", "Machine Precision.mp3",
+                "Machine.mp3", "pinball dream.mp3", "pinball.mp3"
+            }
+            Dim list As New List(Of String)()
+            For Each n In names
+                Dim p = Path.Combine(audioDir, n)
+                If File.Exists(p) Then list.Add(p)
+            Next
+            _musicFiles = list.ToArray()
+        End Sub
+
+        Private Sub StartMusic()
+            If _musicFiles Is Nothing OrElse _musicFiles.Length = 0 Then Return
+            StopMusic()
+            Dim path = _musicFiles(_musicStyle Mod _musicFiles.Length)
+            If Not File.Exists(path) Then Return
+            Try
+                Dim player = If(OperatingSystem.IsMacOS(), "afplay", "mpg123")
+                Dim args   = If(OperatingSystem.IsMacOS(), $"""{path}""", $"-q ""{path}""")
+                Dim psi = New ProcessStartInfo(player, args) With {
+                    .UseShellExecute    = False,
+                    .CreateNoWindow     = True
+                }
+                _musicProcess = New Process() With {.StartInfo = psi, .EnableRaisingEvents = True}
+                AddHandler _musicProcess.Exited, AddressOf OnMusicEnded
+                _musicProcess.Start()
+            Catch
+            End Try
+        End Sub
+
+        Private Sub StopMusic()
+            Try
+                If _musicProcess IsNot Nothing AndAlso Not _musicProcess.HasExited Then
+                    _musicProcess.Kill()
+                End If
+            Catch
+            Finally
+                _musicProcess = Nothing
+            End Try
+        End Sub
+
+        Private Sub OnMusicEnded(sender As Object, e As EventArgs)
+            If _musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0 Then
+                _musicStyle = (_musicStyle + 1) Mod _musicFiles.Length
+            End If
+            Dispatcher.UIThread.InvokeAsync(AddressOf StartMusic)
         End Sub
 
         ' ══════════════════════════════════════════════════════════════════════
