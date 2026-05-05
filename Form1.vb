@@ -11,16 +11,13 @@ Imports System.Runtime.InteropServices
 Imports System.IO
 Imports System.Text
 Imports System.Text.Json
+Imports System.Threading.Tasks
 
 Public Class Form1
 
 #Region "Win32 Sound API"
     <DllImport("winmm.dll", SetLastError:=True)>
     Private Shared Function PlaySound(pszSound As Byte(), hmod As IntPtr, fdwSound As UInteger) As Boolean
-    End Function
-
-    <DllImport("winmm.dll", CharSet:=CharSet.Unicode)>
-    Private Shared Function mciSendString(command As String, buffer As StringBuilder, bufferSize As Integer, hwndCallback As IntPtr) As Integer
     End Function
 
     ' XInput gamepad support (xinput1_4 on Win8+)
@@ -58,31 +55,21 @@ Public Class Form1
     Private Const XINPUT_GAMEPAD_LEFT_SHOULDER As UShort = &H100US
     Private Const XINPUT_GAMEPAD_RIGHT_SHOULDER As UShort = &H200US
 
+    Private Const SND_SYNC As UInteger = &H0
     Private Const SND_ASYNC As UInteger = &H1
     Private Const SND_MEMORY As UInteger = &H4
-    Private Const MM_MCINOTIFY As Integer = &H3B9
-    Private Const MCI_NOTIFY_SUCCESSFUL As Integer = 1
+    Private Const SND_NODEFAULT As UInteger = &H2
+    Private Const SND_PURGE As UInteger = &H40
+
+    ' Dedicated SFX worker so PlaySound (SND_SYNC) never blocks the UI thread
+    ' and a flood of effects can't backlog at the OS level.
+    Private Shared ReadOnly _sfxQueue As New System.Collections.Concurrent.BlockingCollection(Of Byte())(New System.Collections.Concurrent.ConcurrentQueue(Of Byte())(), 4)
+    Private Shared _sfxWorkerStarted As Integer = 0
+
     Private Const MutexName As String = "AnimeFinder_CS120_SingleInstance"
     Private Shared _appMutex As System.Threading.Mutex
 
     Protected Overrides Sub WndProc(ByRef m As Message)
-        If m.Msg = MM_MCINOTIFY AndAlso m.WParam.ToInt32() = MCI_NOTIFY_SUCCESSFUL AndAlso _musicPlaying Then
-            ' Reject notifications that arrive within 2s of a play command.
-            ' Prevents stale queued MCI_NOTIFY_SUCCESSFUL (from a just-finished
-            ' track) from firing again after we have already started a new track.
-            If Environment.TickCount64 - _musicLastStartMs < 2000L Then
-                MyBase.WndProc(m)
-                Return
-            End If
-            _musicPlaying = False
-            If _usingHighScoreMusic Then
-                ScheduleHighScoreMusicStart(10)
-            Else
-                Dim trackCount = If(_musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0, _musicFiles.Length, 6)
-                _musicStyle = (_musicStyle + 1) Mod trackCount
-                ScheduleMusicStart(10)
-            End If
-        End If
         MyBase.WndProc(m)
     End Sub
 #End Region
@@ -252,7 +239,7 @@ Public Class Form1
     Private _starFieldSpeed() As Single
     Private _starFieldBright() As Integer
 
-    Private _sfxVolume As Integer = 80
+    Private _sfxVolume As Integer = 56
     Private _musicVolume As Integer = 100
     Private _musicSpeed As Integer = 75
     Private _colorblindMode As Boolean = False
@@ -271,6 +258,7 @@ Public Class Form1
     Private _highScoreDelayFrames As Integer = 0
     Private _highScoreMusicFile As String = ""
     Private _usingHighScoreMusic As Boolean = False
+    Private _mediaPlayer As Windows.Media.Playback.MediaPlayer = Nothing
 
     Private _windowScale As Integer = 2
     Private _windowScaleNames() As String = {"Small (900x650)", "Medium (1200x867)", "Large (1500x1083)", "XL (1800x1300)"}
@@ -1742,13 +1730,27 @@ Public Class Form1
     End Sub
 
     Private Sub PlaySFX(frequency As Integer, durationMs As Integer)
-        Try
-            If _sfxVolume <= 0 Then Return
-            Dim wav = GenerateWav(frequency, durationMs, _sfxVolume)
-            _lastSfxBuffer = wav
-            PlaySound(wav, IntPtr.Zero, SND_ASYNC Or SND_MEMORY)
-        Catch
-        End Try
+        If _sfxVolume <= 0 Then Return
+        Dim buf = GenerateWav(frequency, durationMs, _sfxVolume)
+        EnsureSfxWorker()
+        ' Bounded queue: drop newest when saturated so bursts can't backlog playback.
+        If Not _sfxQueue.TryAdd(buf) Then
+            ' queue full — silently drop this SFX
+        End If
+    End Sub
+
+    Private Shared Sub EnsureSfxWorker()
+        If System.Threading.Interlocked.CompareExchange(_sfxWorkerStarted, 1, 0) <> 0 Then Return
+        Dim t As New System.Threading.Thread(
+            Sub()
+                For Each buffer In _sfxQueue.GetConsumingEnumerable()
+                    Try
+                        PlaySound(buffer, IntPtr.Zero, SND_SYNC Or SND_MEMORY Or SND_NODEFAULT)
+                    Catch
+                    End Try
+                Next
+            End Sub) With {.IsBackground = True, .Name = "SFX-Worker"}
+        t.Start()
     End Sub
 
     Private Sub PlayWallHit()
@@ -1793,11 +1795,22 @@ Public Class Form1
                 Dim p = Path.Combine(audioDir, trackNames(i))
                 _musicFiles(i) = If(File.Exists(p), p, "")
             Next
-            If _musicStyle >= _musicFiles.Length Then _musicStyle = 0
-            _musicTempFile = _musicFiles(_musicStyle)
-        Catch
-        End Try
-    End Sub
+                ' Pick a random starting track from available files
+                    Dim validCount = _musicFiles.Where(Function(f) Not String.IsNullOrEmpty(f)).Count()
+                    If validCount > 0 Then
+                        _musicStyle = _rng.Next(_musicFiles.Length)
+                        Dim attempts = 0
+                        Do While String.IsNullOrEmpty(_musicFiles(_musicStyle)) AndAlso attempts < _musicFiles.Length
+                            _musicStyle = (_musicStyle + 1) Mod _musicFiles.Length
+                            attempts += 1
+                        Loop
+                    Else
+                        _musicStyle = 0
+                    End If
+                    _musicTempFile = _musicFiles(_musicStyle)
+                Catch
+                End Try
+            End Sub
 
     Private Sub RegenerateCurrentMusicFile()
         ' MP3 tracks are static files — just re-point and restart.
@@ -1810,9 +1823,41 @@ Public Class Form1
         End Try
     End Sub
 
+    Private Sub StartMediaPlayer(filePath As String)
+        Try
+            If String.IsNullOrEmpty(filePath) OrElse Not File.Exists(filePath) Then Return
+            If _mediaPlayer Is Nothing Then
+                _mediaPlayer = New Windows.Media.Playback.MediaPlayer()
+                AddHandler _mediaPlayer.MediaEnded, AddressOf OnMusicEnded
+            End If
+            _mediaPlayer.Source = Windows.Media.Core.MediaSource.CreateFromUri(New Uri(filePath))
+            _mediaPlayer.Volume = GetEffectiveMusicVolume() / 100.0
+            _mediaPlayer.Play()
+            _musicPlaying = True
+            _musicLastStartMs = Environment.TickCount64
+        Catch ex As Exception
+            System.Diagnostics.Debug.WriteLine($"[MUSIC] StartMediaPlayer EXCEPTION {ex.Message}")
+        End Try
+    End Sub
+
+    Private Sub OnMusicEnded(sender As Windows.Media.Playback.MediaPlayer, args As Object)
+        ' Called on a background thread — marshal to the UI thread.
+        If Me.IsDisposed OrElse Not Me.IsHandleCreated Then Return
+        Me.BeginInvoke(
+            Sub()
+                _musicPlaying = False
+                If _usingHighScoreMusic Then
+                    ScheduleHighScoreMusicStart(10)
+                Else
+                    Dim trackCount = If(_musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0, _musicFiles.Length, 6)
+                    _musicStyle = (_musicStyle + 1) Mod trackCount
+                    ScheduleMusicStart(10)
+                End If
+            End Sub)
+    End Sub
+
     Private Sub StartMusic()
         Try
-            ' Cancel any pending music timer to prevent two tracks playing
             If _musicChangeTimer IsNot Nothing Then
                 _musicChangeTimer.Stop()
                 _musicChangeTimer.Dispose()
@@ -1820,17 +1865,14 @@ Public Class Form1
             End If
             If _musicFiles Is Nothing Then Return
             _musicTempFile = _musicFiles(_musicStyle)
-            If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
-            System.Diagnostics.Debug.WriteLine($"[MUSIC-MAIN] Start style={_musicStyle} vol={GetEffectiveMusicVolume()} speed={_musicSpeed}")
-            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("open """ & _musicTempFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
-            Dim vol = CInt(GetEffectiveMusicVolume() * 10)
-            mciSendString("setaudio bgmusic volume to " & vol.ToString(), Nothing, 0, IntPtr.Zero)
-            mciSendString("play bgmusic notify", Nothing, 0, Me.Handle)
-            _musicPlaying = True
-            _musicLastStartMs = Environment.TickCount64
-        Catch
+            If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then
+                System.Diagnostics.Debug.WriteLine($"[MUSIC] FILE MISSING style={_musicStyle} path={_musicTempFile}")
+                Return
+            End If
+            System.Diagnostics.Debug.WriteLine($"[MUSIC] Start style={_musicStyle} vol={GetEffectiveMusicVolume()} file={_musicTempFile}")
+            StartMediaPlayer(_musicTempFile)
+        Catch ex As Exception
+            System.Diagnostics.Debug.WriteLine($"[MUSIC] StartMusic EXCEPTION {ex.Message}")
         End Try
     End Sub
 
@@ -1844,14 +1886,7 @@ Public Class Form1
             If _musicFiles Is Nothing Then Return
             _musicTempFile = _musicFiles(_musicStyle)
             If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
-            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("open """ & _musicTempFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
-            Dim vol = CInt(GetEffectiveMusicVolume() * 10)
-            mciSendString("setaudio bgmusic volume to " & vol.ToString(), Nothing, 0, IntPtr.Zero)
-            mciSendString("play bgmusic notify", Nothing, 0, Me.Handle)
-            _musicPlaying = True
-            _musicLastStartMs = Environment.TickCount64
+            StartMediaPlayer(_musicTempFile)
         Catch
         End Try
     End Sub
@@ -1898,18 +1933,10 @@ Public Class Form1
             Dim audioDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Audio")
             _highScoreMusicFile = Path.Combine(audioDir, "Brick Blast.mp3")
             If Not File.Exists(_highScoreMusicFile) Then
-                ' Fall back to first available track
                 _highScoreMusicFile = If(_musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0, _musicFiles(0), "")
             End If
             If String.IsNullOrEmpty(_highScoreMusicFile) Then Return
-            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("open """ & _highScoreMusicFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
-            Dim vol = CInt(GetEffectiveMusicVolume() * 10)
-            mciSendString("setaudio bgmusic volume to " & vol.ToString(), Nothing, 0, IntPtr.Zero)
-            mciSendString("play bgmusic notify", Nothing, 0, Me.Handle)
-            _musicPlaying = True
-            _musicLastStartMs = Environment.TickCount64
+            StartMediaPlayer(_highScoreMusicFile)
             _usingHighScoreMusic = True
         Catch
         End Try
@@ -1925,8 +1952,9 @@ Public Class Form1
 
     Private Sub StopMusic()
         Try
-            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
+            If _mediaPlayer IsNot Nothing Then
+                _mediaPlayer.Pause()
+            End If
             _musicPlaying = False
         Catch
         End Try
@@ -1935,14 +1963,20 @@ Public Class Form1
     Private Sub CleanupMusic()
         Try
             StopMusic()
+            If _mediaPlayer IsNot Nothing Then
+                RemoveHandler _mediaPlayer.MediaEnded, AddressOf OnMusicEnded
+                _mediaPlayer.Dispose()
+                _mediaPlayer = Nothing
+            End If
         Catch
         End Try
     End Sub
 
     Private Sub UpdateMusicVolume()
         Try
-            Dim vol = CInt(GetEffectiveMusicVolume() * 10)
-            mciSendString("setaudio bgmusic volume to " & vol.ToString(), Nothing, 0, IntPtr.Zero)
+            If _mediaPlayer IsNot Nothing Then
+                _mediaPlayer.Volume = GetEffectiveMusicVolume() / 100.0
+            End If
         Catch
         End Try
     End Sub
@@ -1953,8 +1987,9 @@ Public Class Form1
 
     Private Sub ChangeMusic()
         Try
-            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
+            If _mediaPlayer IsNot Nothing Then
+                _mediaPlayer.Pause()
+            End If
             _musicPlaying = False
             ScheduleMusicStart(60)
         Catch

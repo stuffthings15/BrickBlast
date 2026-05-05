@@ -10,9 +10,9 @@ Imports System.IO
 Imports System.Runtime.InteropServices
 Imports System.Text
 Imports System.Text.Json
+Imports System.Threading.Tasks
 Imports System.Windows
 Imports System.Windows.Input
-Imports System.Windows.Interop
 Imports System.Windows.Media
 Imports System.Windows.Media.Imaging
 Imports System.Windows.Threading
@@ -21,33 +21,14 @@ Namespace BrickBlastWPF
 Public Class GameCanvas
     Inherits FrameworkElement
 
-#Region "Win32 Sound API"
+#Region "Win32 SFX API"
     <DllImport("winmm.dll", SetLastError:=True)>
     Private Shared Function PlaySound(pszSound As Byte(), hmod As IntPtr, fdwSound As UInteger) As Boolean
     End Function
 
-    <DllImport("winmm.dll", CharSet:=CharSet.Unicode)>
-    Private Shared Function mciSendString(command As String, buffer As StringBuilder, bufferSize As Integer, hwndCallback As IntPtr) As Integer
-    End Function
-
-    Private Const SND_ASYNC As UInteger = &H1UI
+    Private Const SND_SYNC As UInteger = &H0UI
     Private Const SND_MEMORY As UInteger = &H4UI
-    Private Const MM_MCINOTIFY As Integer = &H3B9
-    Private Const MCI_NOTIFY_SUCCESSFUL As Integer = 1
-    Private _hwnd As IntPtr = IntPtr.Zero
-
-    Private Function WndProc(hwnd As IntPtr, msg As Integer, wParam As IntPtr, lParam As IntPtr, ByRef handled As Boolean) As IntPtr
-            If msg = MM_MCINOTIFY AndAlso wParam.ToInt32() = MCI_NOTIFY_SUCCESSFUL AndAlso _musicPlaying Then
-                _musicPlaying = False
-                If _usingHighScoreMusic Then
-                    ScheduleHighScoreMusicStart(10)
-                Else
-                    _musicStyle = (_musicStyle + 1) Mod 10
-                    ScheduleMusicStart(10)
-                End If
-            End If
-            Return IntPtr.Zero
-        End Function
+    Private Const SND_NODEFAULT As UInteger = &H2UI
 #End Region
 
 #Region "Constants"
@@ -144,7 +125,7 @@ Public Class GameCanvas
         Private _musicTempFile As String = ""
         Private _musicPlaying As Boolean = False
         Private _musicFiles() As String = Nothing
-        Private _lastSfxBuffer As Byte() = Nothing
+        Private _musicPlayer As MediaPlayer = Nothing
         Private _musicStyle As Integer = 2
         Private _sfxStyle As Integer = 0
         Private _musicChangeTimer As DispatcherTimer = Nothing
@@ -191,7 +172,7 @@ Public Class GameCanvas
         New Color() {C3(86, 180, 233), C3(140, 210, 245)},
         New Color() {C3(204, 121, 167), C3(235, 170, 200)}}
         Private _colorblindSymbols() As String = {ChrW(&H25A0), ChrW(&H25B2), ChrW(&H25CF), ChrW(&H2666), ChrW(&H2605), ChrW(&H25C6), ChrW(&H2663)}
-        Private _musicStyleNames() As String = {"Zelda Adventure", "Mega Man Energy", "Tetris Classic", "Pac-Man Playful", "Space Invaders", "Castlevania Dark", "Metroid Atmosphere", "Galaga Arcade", "Contra Action", "Double Dragon"}
+        Private _musicStyleNames() As String = {"Brick Blast", "Calculated Impact", "Machine Precision", "Machine", "Pinball Dream", "Pinball"}
         Private _sfxStyleNames() As String = {"Classic", "Zelda", "Mega Man", "Tetris", "Retro Arcade"}
         Private _sfxData()() As Integer = {
         New Integer() {300, 60, 500, 80, 600, 80, 1000, 120, 200, 400, 900, 300},
@@ -250,11 +231,6 @@ Public Class GameCanvas
 
         Private Sub OnLoaded(sender As Object, e As RoutedEventArgs)
             _dpi = VisualTreeHelper.GetDpi(Me).PixelsPerDip
-            Dim src = TryCast(PresentationSource.FromVisual(Me), HwndSource)
-            If src IsNot Nothing Then
-                _hwnd = src.Handle
-                src.AddHook(New HwndSourceHook(AddressOf WndProc))
-            End If
             _state = GameState.Menu
             LoadHighScores()
             PreGenerateAllMusic()
@@ -1522,7 +1498,7 @@ Public Class GameCanvas
                 Case 0 : _sfxVolume = Math.Max(0, _sfxVolume - 5) : UpdateMusicVolume()
                 Case 1 : _musicVolume = Math.Max(0, _musicVolume - 5) : UpdateMusicVolume()
                 Case 2 : _musicSpeed = Math.Max(10, _musicSpeed - 5) : RegenerateCurrentMusicFile() : ChangeMusic()
-                Case 3 : _musicStyle = (_musicStyle - 1 + 10) Mod 10 : ChangeMusic()
+                Case 3 : _musicStyle = (_musicStyle - 1 + _musicFiles.Length) Mod _musicFiles.Length : ChangeMusic()
                 Case 4 : _sfxStyle = (_sfxStyle - 1 + 5) Mod 5
                 Case 5 : _colorblindMode = Not _colorblindMode
                 Case 6 : ApplyWindowScale((_windowScale - 1 + _windowScaleSizes.Length) Mod _windowScaleSizes.Length)
@@ -1534,7 +1510,7 @@ Public Class GameCanvas
                 Case 0 : _sfxVolume = Math.Min(100, _sfxVolume + 5) : UpdateMusicVolume()
                 Case 1 : _musicVolume = Math.Min(100, _musicVolume + 5) : UpdateMusicVolume()
                 Case 2 : _musicSpeed = Math.Min(200, _musicSpeed + 5) : RegenerateCurrentMusicFile() : ChangeMusic()
-                Case 3 : _musicStyle = (_musicStyle + 1) Mod 10 : ChangeMusic()
+                Case 3 : _musicStyle = (_musicStyle + 1) Mod _musicFiles.Length : ChangeMusic()
                 Case 4 : _sfxStyle = (_sfxStyle + 1) Mod 5
                 Case 5 : _colorblindMode = Not _colorblindMode
                 Case 6 : ApplyWindowScale((_windowScale + 1) Mod _windowScaleSizes.Length)
@@ -1599,11 +1575,16 @@ Public Class GameCanvas
         End Function
 
         Private Sub PlaySFX(frequency As Integer, durationMs As Integer)
-            Try
-                If _sfxVolume <= 0 Then Return
-                _lastSfxBuffer = GenerateWav(frequency, durationMs, _sfxVolume)
-                PlaySound(_lastSfxBuffer, IntPtr.Zero, SND_ASYNC Or SND_MEMORY)
-            Catch : End Try
+            If _sfxVolume <= 0 Then Return
+            ' Run on a background thread so SND_SYNC never blocks the UI thread.
+            ' The buffer is captured by the lambda, keeping it alive until PlaySound returns.
+            Dim buf = GenerateWav(frequency, durationMs, _sfxVolume)
+            Task.Run(Sub()
+                         Try
+                             PlaySound(buf, IntPtr.Zero, SND_SYNC Or SND_MEMORY Or SND_NODEFAULT)
+                         Catch
+                         End Try
+                     End Sub)
         End Sub
 
         Private Sub PlayWallHit()
@@ -1628,449 +1609,150 @@ Public Class GameCanvas
             PlaySFX(800 + Math.Min(_combo, 10) * 100, 100 + Math.Min(_combo, 6) * 15)
         End Sub
 
-        ' =========================================================================
-        ' MUSIC DATA � 96-note compositions per style (3x previous length).
-        ' Each style: A(16) ? B(16) ? A'(16) ? C(16) ? D(16) ? A''(16)
-        ' Doubled to 192 notes by GenerateMidiBytes for ~40s loops.
-        ' =========================================================================
-        Private Sub GetMusicData(style As Integer, ByRef freqs() As Integer, ByRef durs() As Integer)
-            Select Case style
-                Case 0 ' ?? Zelda Adventure ?? G major, lyrical flute, open arpeggios
-                    freqs = {
-                    392, 494, 587, 784, 659, 587, 494, 0, 392, 440, 494, 587, 659, 587, 494, 392,
-                    440, 523, 659, 880, 784, 659, 523, 0, 587, 659, 784, 880, 784, 659, 587, 523,
-                    392, 494, 587, 784, 659, 587, 494, 440, 392, 440, 494, 587, 784, 0, 659, 587,
-                    494, 587, 784, 988, 880, 784, 659, 587, 523, 659, 784, 880, 988, 880, 784, 0,
-                    330, 392, 494, 659, 587, 494, 392, 0, 440, 494, 587, 659, 587, 494, 440, 392,
-                    392, 494, 587, 659, 587, 494, 392, 0, 330, 392, 440, 494, 587, 494, 392, 0}
-                    durs = {
-                    200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
-                    200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
-                    200, 200, 200, 300, 200, 200, 200, 200, 200, 200, 200, 350, 300, 100, 200, 300,
-                    200, 200, 200, 350, 200, 200, 200, 200, 200, 200, 200, 300, 300, 200, 350, 200,
-                    200, 200, 200, 300, 200, 200, 350, 100, 200, 200, 200, 300, 200, 200, 200, 300,
-                    200, 200, 200, 300, 200, 200, 400, 100, 200, 200, 200, 300, 300, 200, 400, 200}
-
-                Case 1 ' ?? Mega Man Energy ?? E minor, driving square lead, fast runs
-                    freqs = {
-                    659, 659, 587, 523, 587, 659, 784, 659, 880, 784, 659, 587, 523, 587, 659, 523,
-                    659, 784, 880, 988, 880, 784, 659, 523, 587, 659, 784, 880, 784, 659, 587, 494,
-                    659, 659, 587, 523, 587, 659, 784, 880, 784, 659, 523, 440, 494, 523, 587, 659,
-                    880, 988, 880, 784, 659, 784, 880, 988, 784, 659, 587, 523, 587, 659, 784, 0,
-                    330, 392, 440, 494, 523, 494, 440, 392, 440, 494, 523, 587, 659, 587, 523, 494,
-                    659, 784, 880, 988, 880, 784, 659, 587, 523, 587, 659, 784, 880, 784, 659, 0}
-                    durs = {
-                    130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 200,
-                    130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 200,
-                    130, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 130, 200,
-                    130, 200, 130, 130, 130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 200, 150,
-                    150, 150, 150, 150, 150, 150, 150, 200, 150, 150, 150, 150, 150, 150, 150, 200,
-                    130, 130, 130, 200, 130, 130, 130, 130, 130, 130, 130, 200, 200, 130, 200, 150}
-
-                Case 2 ' ?? Tetris Classic ?? A minor, Korobeiniki folk melody, music box
-                    freqs = {
-                    659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 0,
-                    523, 587, 659, 523, 440, 440, 523, 587, 659, 587, 523, 494, 440, 494, 523, 587,
-                    659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 523,
-                    587, 0, 698, 880, 784, 698, 659, 0, 523, 0, 659, 587, 523, 494, 440, 0,
-                    587, 698, 880, 784, 698, 659, 523, 659, 587, 523, 494, 440, 494, 523, 587, 659,
-                    659, 494, 523, 587, 659, 587, 523, 494, 440, 440, 523, 659, 587, 523, 494, 0}
-                    durs = {
-                    200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 200, 100,
-                    100, 200, 200, 100, 200, 100, 100, 200, 200, 100, 100, 200, 100, 100, 100, 200,
-                    200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 200, 100,
-                    200, 200, 200, 100, 200, 100, 100, 200, 200, 100, 200, 100, 100, 200, 200, 200,
-                    200, 100, 200, 100, 100, 200, 100, 200, 200, 100, 100, 200, 100, 100, 200, 200,
-                    200, 100, 100, 200, 100, 100, 200, 100, 200, 100, 100, 200, 100, 100, 300, 200}
-
-                Case 3 ' ?? Pac-Man Playful ?? C major, bouncy staccato, octave jumps
-                    freqs = {
-                    523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 0,
-                    659, 784, 880, 784, 659, 523, 440, 523, 659, 784, 880, 1047, 880, 784, 659, 0,
-                    523, 1047, 784, 659, 1047, 784, 659, 0, 523, 494, 440, 494, 523, 659, 784, 880,
-                    440, 523, 659, 523, 440, 392, 349, 392, 440, 523, 659, 784, 659, 523, 440, 0,
-                    784, 880, 1047, 880, 784, 659, 784, 880, 1047, 880, 784, 659, 523, 659, 784, 0,
-                    523, 1047, 784, 659, 523, 494, 440, 494, 523, 659, 784, 880, 1047, 880, 784, 0}
-                    durs = {
-                    160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 300, 100,
-                    160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 300, 160, 160, 200, 150,
-                    160, 160, 160, 160, 160, 160, 300, 100, 160, 160, 160, 160, 160, 160, 160, 200,
-                    160, 160, 200, 160, 160, 160, 160, 160, 160, 160, 160, 200, 160, 160, 300, 100,
-                    200, 160, 200, 160, 160, 160, 160, 200, 200, 160, 160, 160, 160, 160, 300, 100,
-                    160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 160, 200, 200, 160, 300, 150}
-
-                Case 4 ' ?? Space Invaders ?? E low, ominous march, cello, building tension
-                    freqs = {
-                    165, 165, 165, 0, 147, 147, 147, 0, 131, 131, 131, 0, 147, 165, 196, 262,
-                    196, 165, 131, 0, 165, 165, 165, 0, 147, 147, 147, 0, 131, 165, 196, 0,
-                    220, 220, 220, 0, 196, 196, 196, 0, 175, 175, 175, 0, 196, 220, 262, 294,
-                    262, 262, 294, 0, 262, 220, 196, 0, 220, 247, 262, 294, 262, 220, 196, 165,
-                    294, 262, 247, 220, 196, 175, 165, 0, 131, 147, 165, 196, 220, 196, 165, 0,
-                    165, 165, 165, 0, 147, 147, 147, 0, 131, 131, 131, 0, 165, 196, 220, 0}
-                    durs = {
-                    250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 200, 200, 200, 400,
-                    250, 250, 400, 200, 250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 400, 150,
-                    250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 200, 200, 200, 400,
-                    300, 300, 300, 200, 300, 250, 250, 200, 200, 200, 200, 300, 250, 250, 250, 300,
-                    200, 200, 200, 200, 250, 250, 400, 200, 250, 250, 250, 250, 300, 250, 400, 200,
-                    250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 250, 150, 250, 250, 400, 200}
-
-                Case 5 ' ?? Castlevania Dark ?? A minor harmonic, gothic organ arpeggios
-                    freqs = {
-                    440, 523, 659, 880, 831, 659, 523, 440, 494, 587, 698, 988, 880, 698, 587, 494,
-                    880, 831, 659, 523, 440, 415, 392, 440, 523, 587, 659, 784, 831, 784, 659, 523,
-                    440, 523, 659, 880, 831, 659, 523, 440, 392, 440, 494, 523, 494, 440, 392, 0,
-                    659, 587, 523, 494, 523, 587, 659, 784, 831, 784, 659, 587, 523, 587, 659, 880,
-                    440, 0, 415, 0, 392, 0, 349, 0, 392, 415, 440, 523, 659, 880, 831, 659,
-                    440, 523, 659, 880, 988, 880, 784, 659, 523, 587, 659, 784, 880, 831, 659, 0}
-                    durs = {
-                    180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250,
-                    180, 180, 180, 180, 200, 200, 200, 250, 180, 180, 180, 250, 200, 180, 180, 250,
-                    180, 180, 180, 250, 180, 180, 180, 250, 180, 180, 180, 250, 200, 200, 350, 150,
-                    180, 180, 180, 180, 180, 180, 180, 250, 200, 180, 180, 180, 180, 180, 180, 300,
-                    300, 150, 300, 150, 300, 150, 300, 150, 180, 180, 180, 250, 200, 200, 200, 250,
-                    180, 180, 180, 250, 200, 180, 180, 180, 180, 180, 180, 250, 300, 200, 350, 200}
-
-                Case 6 ' ?? Metroid Atmosphere ?? atonal, sparse synth pad, wide intervals
-                    freqs = {
-                    165, 0, 196, 0, 220, 0, 0, 0, 247, 0, 262, 0, 0, 0, 165, 0,
-                    196, 0, 175, 0, 165, 0, 0, 0, 247, 262, 0, 0, 220, 196, 165, 0,
-                    165, 0, 330, 0, 262, 0, 0, 0, 196, 0, 370, 0, 294, 0, 165, 0,
-                    220, 247, 262, 294, 262, 247, 220, 0, 165, 196, 220, 247, 262, 220, 196, 0,
-                    330, 294, 262, 247, 220, 196, 175, 165, 196, 0, 220, 0, 262, 0, 294, 0,
-                    165, 0, 0, 0, 196, 0, 0, 0, 220, 0, 165, 0, 0, 0, 0, 0}
-                    durs = {
-                    400, 200, 400, 200, 400, 200, 300, 200, 400, 200, 400, 200, 300, 200, 500, 200,
-                    400, 200, 400, 200, 400, 200, 300, 200, 300, 300, 300, 200, 400, 400, 500, 200,
-                    400, 200, 500, 200, 400, 200, 300, 200, 400, 200, 500, 200, 400, 200, 500, 200,
-                    250, 250, 250, 300, 250, 250, 400, 200, 250, 250, 250, 300, 300, 250, 500, 200,
-                    300, 300, 300, 300, 300, 300, 300, 400, 400, 200, 400, 200, 400, 200, 400, 200,
-                    500, 200, 300, 200, 500, 200, 300, 200, 400, 200, 500, 200, 300, 200, 300, 400}
-
-                Case 7 ' ?? Galaga Arcade ?? C major, fast ascending, bright square lead
-                    freqs = {
-                    523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 1175, 880, 698, 587, 0,
-                    523, 659, 784, 1047, 784, 659, 523, 0, 587, 698, 880, 784, 659, 523, 440, 0,
-                    659, 784, 880, 1047, 880, 784, 659, 523, 587, 698, 880, 1175, 1047, 880, 784, 659,
-                    1047, 880, 784, 659, 523, 659, 784, 880, 1047, 1175, 1047, 880, 784, 659, 523, 0,
-                    440, 523, 659, 784, 659, 523, 440, 0, 349, 440, 523, 659, 784, 659, 523, 440,
-                    523, 659, 784, 1047, 880, 784, 659, 587, 523, 587, 659, 784, 1047, 880, 784, 0}
-                    durs = {
-                    140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 280, 100,
-                    140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 140, 140, 200, 150,
-                    140, 140, 140, 200, 140, 140, 140, 140, 140, 140, 140, 200, 200, 140, 140, 200,
-                    200, 140, 140, 140, 140, 140, 140, 200, 200, 200, 140, 140, 140, 140, 280, 150,
-                    140, 140, 140, 200, 140, 140, 280, 100, 140, 140, 140, 200, 200, 140, 140, 200,
-                    140, 140, 140, 200, 140, 140, 140, 140, 140, 140, 140, 200, 200, 140, 280, 150}
-
-                Case 8 ' ?? Contra Action ?? E minor, military march, overdriven guitar
-                    freqs = {
-                    330, 330, 370, 392, 440, 392, 370, 330, 294, 294, 330, 370, 392, 370, 330, 294,
-                    330, 392, 440, 494, 523, 494, 440, 392, 440, 494, 523, 587, 659, 587, 523, 494,
-                    330, 330, 370, 392, 440, 494, 523, 587, 659, 587, 494, 440, 392, 370, 330, 0,
-                    659, 659, 587, 523, 494, 523, 587, 659, 784, 659, 587, 523, 494, 523, 587, 0,
-                    262, 294, 330, 370, 392, 370, 330, 294, 262, 294, 330, 392, 440, 392, 330, 294,
-                    330, 392, 440, 494, 523, 587, 659, 784, 659, 587, 494, 440, 392, 330, 294, 0}
-                    durs = {
-                    170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 250,
-                    170, 170, 170, 200, 170, 170, 170, 250, 170, 170, 170, 200, 200, 170, 170, 250,
-                    170, 170, 170, 250, 170, 170, 170, 250, 170, 170, 170, 170, 200, 170, 350, 100,
-                    200, 200, 170, 170, 170, 170, 170, 250, 200, 170, 170, 170, 170, 170, 350, 150,
-                    170, 170, 170, 170, 200, 170, 170, 250, 170, 170, 170, 200, 200, 170, 170, 250,
-                    170, 170, 170, 200, 200, 170, 200, 250, 170, 170, 170, 170, 200, 170, 350, 150}
-
-                Case Else ' ?? Double Dragon ?? A minor pentatonic, bluesy, gritty guitar
-                    freqs = {
-                    220, 262, 330, 440, 392, 330, 262, 220, 247, 294, 349, 494, 440, 349, 294, 247,
-                    330, 392, 440, 523, 440, 392, 330, 262, 294, 330, 392, 440, 523, 440, 392, 330,
-                    220, 262, 330, 440, 392, 330, 262, 220, 294, 330, 392, 440, 392, 330, 294, 0,
-                    440, 523, 587, 659, 587, 523, 440, 392, 330, 392, 440, 523, 587, 523, 440, 330,
-                    220, 0, 262, 294, 330, 294, 262, 0, 220, 262, 330, 440, 392, 330, 262, 220,
-                    330, 392, 440, 523, 587, 523, 440, 392, 330, 262, 294, 330, 440, 392, 330, 0}
-                    durs = {
-                    190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250,
-                    190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250, 190, 190, 190, 250,
-                    190, 190, 190, 250, 190, 190, 250, 200, 190, 190, 190, 250, 200, 190, 350, 150,
-                    200, 190, 190, 250, 190, 190, 190, 200, 190, 190, 190, 250, 200, 190, 190, 250,
-                    250, 150, 200, 200, 250, 200, 350, 150, 190, 190, 190, 250, 190, 190, 190, 250,
-                    190, 190, 190, 250, 190, 190, 190, 200, 190, 190, 190, 250, 250, 200, 400, 200}
-            End Select
-        End Sub
-
-        ' =========================================================================
-        ' MIDI GENERATOR � Format 1 multi-track: tempo + melody + bass.
-        ' Bass line derived algorithmically from melody (root extraction).
-        ' Velocity accents on beats 1 and 3 for rhythmic feel.
-        ' =========================================================================
-        Private Function GenerateMidiBytes() As Byte()
-            Dim midi As New List(Of Byte)
-            Const REF_BPM As Integer = 120
-            Dim melodyInsts() = {73, 80, 10, 81, 42, 19, 88, 80, 30, 31}
-            Dim bassInsts() = {33, 38, 33, 38, 38, 43, 39, 38, 34, 34}
-            Dim harmInsts() = {48, 80, 52, 71, 43, 19, 92, 80, 28, 28}
-            Dim bpms() = {90, 150, 140, 130, 70, 100, 50, 160, 145, 95}
-            Dim si = Math.Min(_musicStyle, 9)
-            Dim inst = melodyInsts(si), bassInst = bassInsts(si), harmInst = harmInsts(si)
-            Dim playBpm = Math.Max(1, CInt(bpms(si) * _musicSpeed / 100.0))
-            Dim usPerQN = CInt(60000000.0 / playBpm), tpq = 480
-            Dim freqs() As Integer = Nothing, durs() As Integer = Nothing
-            GetMusicData(_musicStyle, freqs, durs)
-            ' Double for longer loop (96 ? 192 notes)
-            Dim n = freqs.Length
-            Dim f2(2 * n - 1) As Integer, d2(2 * n - 1) As Integer
-            Array.Copy(freqs, 0, f2, 0, n) : Array.Copy(durs, 0, d2, 0, n)
-            Array.Copy(freqs, 0, f2, n, n) : Array.Copy(durs, 0, d2, n, n)
-            freqs = f2 : durs = d2
-            ' Derive bass and harmony from melody
-            Dim bassF() As Integer = Nothing, bassD() As Integer = Nothing
-            DeriveBassLine(freqs, durs, bassF, bassD)
-            Dim harmF() As Integer = Nothing, harmD() As Integer = Nothing
-            DeriveHarmonyTrack(freqs, durs, harmF, harmD)
-            ' ?? Track 0: Tempo ??
-            Dim trk0 As New List(Of Byte)
-            MidiVL(trk0, 0) : trk0.Add(&HFF) : trk0.Add(&H51) : trk0.Add(3)
-            trk0.Add(CByte((usPerQN >> 16) And &HFF))
-            trk0.Add(CByte((usPerQN >> 8) And &HFF))
-            trk0.Add(CByte(usPerQN And &HFF))
-            MidiVL(trk0, 0) : trk0.Add(&HFF) : trk0.Add(&H2F) : trk0.Add(0)
-            ' ?? Track 1: Melody (channel 0) ??
-            Dim trk1 As New List(Of Byte)
-            MidiVL(trk1, 0) : trk1.Add(&HB0) : trk1.Add(7)
-            trk1.Add(CByte(Math.Min(127, CInt(_musicVolume * 1.27))))
-            MidiVL(trk1, 0) : trk1.Add(&HC0) : trk1.Add(CByte(inst))
-            WriteMidiNotes(trk1, &H90, &H80, freqs, durs, tpq, REF_BPM, 100)
-            MidiVL(trk1, 0) : trk1.Add(&HFF) : trk1.Add(&H2F) : trk1.Add(0)
-            ' ?? Track 2: Bass (channel 1) ??
-            Dim trk2 As New List(Of Byte)
-            MidiVL(trk2, 0) : trk2.Add(&HB1) : trk2.Add(7)
-            trk2.Add(CByte(Math.Min(127, CInt(_musicVolume * 1.1))))
-            MidiVL(trk2, 0) : trk2.Add(&HC1) : trk2.Add(CByte(bassInst))
-            WriteMidiNotes(trk2, &H91, &H81, bassF, bassD, tpq, REF_BPM, 75)
-            MidiVL(trk2, 0) : trk2.Add(&HFF) : trk2.Add(&H2F) : trk2.Add(0)
-            ' Track 3: harmony/pad (channel 2)
-            Dim trk3 As New List(Of Byte)
-            MidiVL(trk3, 0) : trk3.Add(&HB2) : trk3.Add(7)
-            trk3.Add(CByte(Math.Min(127, CInt(_musicVolume * 0.9))))
-            MidiVL(trk3, 0) : trk3.Add(&HC2) : trk3.Add(CByte(harmInst))
-            WriteMidiNotes(trk3, &H92, &H82, harmF, harmD, tpq, REF_BPM, 55)
-            MidiVL(trk3, 0) : trk3.Add(&HFF) : trk3.Add(&H2F) : trk3.Add(0)
-            ' ?? MIDI Header: Format 1, 3 tracks ??
-            midi.AddRange(Encoding.ASCII.GetBytes("MThd"))
-            BE32(midi, 6) : BE16(midi, 1) : BE16(midi, 4) : BE16(midi, tpq)
-            midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
-            BE32(midi, trk0.Count) : midi.AddRange(trk0)
-            midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
-            BE32(midi, trk1.Count) : midi.AddRange(trk1)
-            midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
-            BE32(midi, trk2.Count) : midi.AddRange(trk2)
-            midi.AddRange(Encoding.ASCII.GetBytes("MTrk"))
-            BE32(midi, trk3.Count) : midi.AddRange(trk3)
-            Return midi.ToArray()
-        End Function
-
-        Private Sub WriteMidiNotes(trk As List(Of Byte), noteOnCmd As Byte, noteOffCmd As Byte,
-                               freqs() As Integer, durs() As Integer,
-                               tpq As Integer, bpm As Integer, baseVel As Integer)
-            Dim pd = 0
-            For i = 0 To freqs.Length - 1
-                Dim ticks = CInt(durs(i) * tpq * bpm / 60000.0)
-                If ticks < 1 Then ticks = 1
-                If freqs(i) <= 0 Then pd += ticks : Continue For
-                Dim nt = CInt(Math.Max(0, Math.Min(127, Math.Round(69.0 + 12.0 * Math.Log(freqs(i) / 440.0) / Math.Log(2.0)))))
-                ' Accent beats 1 and 3 for rhythmic dynamics
-                Dim vel = CByte(Math.Min(127, baseVel + If(i Mod 4 = 0, 18, If(i Mod 4 = 2, 8, 0))))
-                MidiVL(trk, pd) : trk.Add(noteOnCmd) : trk.Add(CByte(nt)) : trk.Add(vel)
-                Dim onT = CInt(ticks * 0.85) : If onT < 1 Then onT = 1
-                MidiVL(trk, onT) : trk.Add(noteOffCmd) : trk.Add(CByte(nt)) : trk.Add(0)
-                pd = ticks - onT
-            Next
-        End Sub
-
-        Private Sub DeriveBassLine(melFreqs() As Integer, melDurs() As Integer,
-                               ByRef bassFreqs() As Integer, ByRef bassDurs() As Integer)
-            Dim bf As New List(Of Integer), bd As New List(Of Integer)
-            For i = 0 To melFreqs.Length - 1 Step 4
-                Dim root = 0, dur = 0
-                For j = i To Math.Min(i + 3, melFreqs.Length - 1)
-                    dur += melDurs(j)
-                    If melFreqs(j) > 0 AndAlso (root = 0 OrElse melFreqs(j) < root) Then root = melFreqs(j)
-                Next
-                If root > 0 Then
-                    ' Transpose to bass register (below 300 Hz)
-                    While root > 300 : root = root \ 2 : End While
-                    ' Root note for 65%, fifth for 25%, rest 10%
-                    Dim fifth = CInt(root * 1.5)
-                    While fifth > 400 : fifth = fifth \ 2 : End While
-                    bf.Add(root) : bd.Add(CInt(dur * 0.65))
-                    bf.Add(fifth) : bd.Add(CInt(dur * 0.25))
-                    bf.Add(0) : bd.Add(CInt(dur * 0.1))
-                Else
-                    bf.Add(0) : bd.Add(dur)
-                End If
-            Next
-            bassFreqs = bf.ToArray() : bassDurs = bd.ToArray()
-        End Sub
-
-        Private Sub DeriveHarmonyTrack(melFreqs() As Integer, melDurs() As Integer,
-                                       ByRef harmFreqs() As Integer, ByRef harmDurs() As Integer)
-            Dim hf As New List(Of Integer), hd As New List(Of Integer)
-            For i = 0 To melFreqs.Length - 1 Step 8
-                Dim root = 0, dur = 0
-                For j = i To Math.Min(i + 7, melFreqs.Length - 1)
-                    dur += melDurs(j)
-                    If melFreqs(j) > 0 AndAlso (root = 0 OrElse melFreqs(j) < root) Then root = melFreqs(j)
-                Next
-                If root > 0 Then
-                    While root > 520 : root = root \ 2 : End While
-                    While root < 260 : root = root * 2 : End While
-                    Dim fifth = CInt(root * 1.498)
-                    hf.Add(root) : hd.Add(CInt(dur * 0.48))
-                    hf.Add(fifth) : hd.Add(CInt(dur * 0.38))
-                    hf.Add(0) : hd.Add(CInt(dur * 0.14))
-                Else
-                    hf.Add(0) : hd.Add(dur)
-                End If
-            Next
-            harmFreqs = hf.ToArray() : harmDurs = hd.ToArray()
-        End Sub
-
-        Private Sub MidiVL(d As List(Of Byte), v As Integer)
-            If v < 0 Then v = 0
-            If v < &H80 Then
-                d.Add(CByte(v))
-            ElseIf v < &H4000 Then
-                d.Add(CByte((v >> 7) Or &H80))
-                d.Add(CByte(v And &H7F))
-            ElseIf v < &H200000 Then
-                d.Add(CByte((v >> 14) Or &H80))
-                d.Add(CByte(((v >> 7) And &H7F) Or &H80))
-                d.Add(CByte(v And &H7F))
-            Else
-                d.Add(CByte((v >> 21) Or &H80))
-                d.Add(CByte(((v >> 14) And &H7F) Or &H80))
-                d.Add(CByte(((v >> 7) And &H7F) Or &H80))
-                d.Add(CByte(v And &H7F))
-            End If
-        End Sub
-        Private Sub BE32(d As List(Of Byte), v As Integer)
-            d.Add(CByte((v >> 24) And &HFF))
-            d.Add(CByte((v >> 16) And &HFF))
-            d.Add(CByte((v >> 8) And &HFF))
-            d.Add(CByte(v And &HFF))
-        End Sub
-        Private Sub BE16(d As List(Of Byte), v As Integer)
-            d.Add(CByte((v >> 8) And &HFF))
-            d.Add(CByte(v And &HFF))
-        End Sub
-
         Private Sub PreGenerateAllMusic()
             Try
-                Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v3")
-                If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
-                ReDim _musicFiles(9)
-                For i = 0 To 9
-                    _musicFiles(i) = Path.Combine(tmpDir, $"style_{i}.mid")
-                    Dim old = _musicStyle : _musicStyle = i : File.WriteAllBytes(_musicFiles(i), GenerateMidiBytes()) : _musicStyle = old
+                Dim audioDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Audio")
+                Dim trackNames() As String = {
+                    "Brick Blast.mp3", "Calculated Impact.mp3", "Machine Precision.mp3",
+                    "Machine.mp3", "pinball dream.mp3", "pinball.mp3"
+                }
+                ReDim _musicFiles(trackNames.Length - 1)
+                For i = 0 To trackNames.Length - 1
+                    Dim p = Path.Combine(audioDir, trackNames(i))
+                    _musicFiles(i) = If(File.Exists(p), p, "")
                 Next
+                ' Pick a random starting track
+                Dim validTracks = _musicFiles.Where(Function(f) Not String.IsNullOrEmpty(f)).ToArray()
+                If validTracks.Length > 0 Then
+                    _musicStyle = _rng.Next(_musicFiles.Length)
+                    ' Make sure the chosen index actually has a file
+                    Dim attempts = 0
+                    Do While String.IsNullOrEmpty(_musicFiles(_musicStyle)) AndAlso attempts < _musicFiles.Length
+                        _musicStyle = (_musicStyle + 1) Mod _musicFiles.Length
+                        attempts += 1
+                    Loop
+                End If
                 _musicTempFile = _musicFiles(_musicStyle)
+                ' Create the MediaPlayer on the UI thread so it is dispatcher-affine
+                _musicPlayer = New MediaPlayer()
+                AddHandler _musicPlayer.MediaOpened, AddressOf OnMusicOpened
+                AddHandler _musicPlayer.MediaEnded, AddressOf OnMusicEnded
             Catch : End Try
+        End Sub
+
+        ' Called when the media file is fully loaded and buffered — safe to Play() here
+        Private Sub OnMusicOpened(sender As Object, e As EventArgs)
+            Try
+                If _musicPlayer IsNot Nothing Then
+                    _musicPlayer.Volume = GetEffectiveMusicVolume() / 100.0
+                    _musicPlayer.Play()
+                    _musicPlaying = True
+                End If
+            Catch : End Try
+        End Sub
+
+        Private Sub OnMusicEnded(sender As Object, e As EventArgs)
+            ' Called on the UI thread by MediaPlayer
+            _musicPlaying = False
+            If _usingHighScoreMusic Then
+                ScheduleHighScoreMusicStart(10)
+            Else
+                If _musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0 Then
+                    _musicStyle = (_musicStyle + 1) Mod _musicFiles.Length
+                End If
+                ScheduleMusicStart(10)
+            End If
         End Sub
 
         Private Sub RegenerateCurrentMusicFile()
             Try
-                If _musicFiles Is Nothing OrElse _musicStyle < 0 OrElse _musicStyle >= _musicFiles.Length Then Return
-                Dim p = _musicFiles(_musicStyle) : If String.IsNullOrEmpty(p) Then Return
-                mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-                File.WriteAllBytes(p, GenerateMidiBytes()) : _musicTempFile = p
+                If _musicFiles Is Nothing Then Return
+                If _musicStyle < 0 OrElse _musicStyle >= _musicFiles.Length Then Return
+                _musicTempFile = _musicFiles(_musicStyle)
+                ChangeMusic()
             Catch : End Try
         End Sub
 
         Private Sub StartMusic()
             Try
-                If _musicFiles Is Nothing Then Return
+                If _musicPlayer Is Nothing OrElse _musicFiles Is Nothing Then Return
                 _musicTempFile = _musicFiles(_musicStyle)
                 If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
-                System.Diagnostics.Debug.WriteLine($"[MUSIC-WPF] Start style={_musicStyle} vol={GetEffectiveMusicVolume()}")
-                mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-                mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-                mciSendString("open """ & _musicTempFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
-                mciSendString("setaudio bgmusic volume to " & CInt(GetEffectiveMusicVolume() * 10).ToString(), Nothing, 0, IntPtr.Zero)
-                mciSendString("play bgmusic notify", Nothing, 0, _hwnd) : _musicPlaying = True
+                System.Diagnostics.Debug.WriteLine($"[MUSIC-WPF] Start style={_musicStyle} file={_musicTempFile}")
+                _usingHighScoreMusic = False
+                _musicPlayer.Stop()
+                _musicPlayer.Close()
+                ' Open() is async — Play() is called from OnMusicOpened once the media is ready
+                _musicPlayer.Open(New Uri(_musicTempFile, UriKind.Absolute))
             Catch : End Try
         End Sub
 
         Private Sub StartMusicDirect()
+            StartMusic()
+        End Sub
+
+        Private Sub ScheduleMusicStart(delayMs As Integer)
+            If _musicChangeTimer IsNot Nothing Then _musicChangeTimer.Stop()
+            _musicChangeTimer = New DispatcherTimer() With {.Interval = TimeSpan.FromMilliseconds(Math.Max(10, delayMs))}
+            AddHandler _musicChangeTimer.Tick, Sub(s, ev)
+                                                     _musicChangeTimer.Stop()
+                                                     _musicChangeTimer = Nothing
+                                                     StartMusic()
+                                                 End Sub
+            _musicChangeTimer.Start()
+        End Sub
+
+        Private Sub ScheduleHighScoreMusicStart(delayMs As Integer)
+            If _musicChangeTimer IsNot Nothing Then _musicChangeTimer.Stop()
+            _musicChangeTimer = New DispatcherTimer() With {.Interval = TimeSpan.FromMilliseconds(Math.Max(10, delayMs))}
+            AddHandler _musicChangeTimer.Tick, Sub(s, ev)
+                                                     _musicChangeTimer.Stop()
+                                                     _musicChangeTimer = Nothing
+                                                     StartHighScoreMusic()
+                                                 End Sub
+            _musicChangeTimer.Start()
+        End Sub
+
+        Private Sub StartHighScoreMusic()
             Try
-                If _musicFiles Is Nothing Then Return
-                _musicTempFile = _musicFiles(_musicStyle)
-                If String.IsNullOrEmpty(_musicTempFile) OrElse Not File.Exists(_musicTempFile) Then Return
-                mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero)
-                mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-                mciSendString("open """ & _musicTempFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("setaudio bgmusic volume to " & CInt(GetEffectiveMusicVolume() * 10).ToString(), Nothing, 0, IntPtr.Zero)
-            mciSendString("play bgmusic notify", Nothing, 0, _hwnd) : _musicPlaying = True
-        Catch : End Try
-    End Sub
+                If _musicPlayer Is Nothing Then Return
+                Dim audioDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Audio")
+                _highScoreMusicFile = Path.Combine(audioDir, "Brick Blast.mp3")
+                If Not File.Exists(_highScoreMusicFile) Then
+                    _highScoreMusicFile = If(_musicFiles IsNot Nothing AndAlso _musicFiles.Length > 0, _musicFiles(0), "")
+                End If
+                If String.IsNullOrEmpty(_highScoreMusicFile) Then Return
+                _musicPlayer.Stop()
+                _musicPlayer.Close()
+                _usingHighScoreMusic = True
+                ' Open() is async — Play() fires from OnMusicOpened
+                _musicPlayer.Open(New Uri(_highScoreMusicFile, UriKind.Absolute))
+            Catch : End Try
+        End Sub
 
-    Private Sub ScheduleMusicStart(delayMs As Integer)
-        If _musicChangeTimer IsNot Nothing Then _musicChangeTimer.Stop()
-        _musicChangeTimer = New DispatcherTimer() With {.Interval = TimeSpan.FromMilliseconds(Math.Max(10, delayMs))}
-        AddHandler _musicChangeTimer.Tick, Sub(s, ev)
-                                                 _musicChangeTimer.Stop()
-                                                 _musicChangeTimer = Nothing
-                                                 StartMusicDirect()
-                                             End Sub
-        _musicChangeTimer.Start()
-    End Sub
+        Private Sub UpdateMusicVolume()
+            Try
+                If _musicPlayer IsNot Nothing Then _musicPlayer.Volume = GetEffectiveMusicVolume() / 100.0
+            Catch : End Try
+        End Sub
 
-    Private Sub ScheduleHighScoreMusicStart(delayMs As Integer)
-        If _musicChangeTimer IsNot Nothing Then _musicChangeTimer.Stop()
-        _musicChangeTimer = New DispatcherTimer() With {.Interval = TimeSpan.FromMilliseconds(Math.Max(10, delayMs))}
-        AddHandler _musicChangeTimer.Tick, Sub(s, ev)
-                                                 _musicChangeTimer.Stop()
-                                                 _musicChangeTimer = Nothing
-                                                 StartHighScoreMusic()
-                                             End Sub
-        _musicChangeTimer.Start()
-    End Sub
+        Private Function GetEffectiveMusicVolume() As Integer
+            Return Math.Max(0, Math.Min(_musicVolume, 100))
+        End Function
 
-    Private Sub StartHighScoreMusic()
-        Try
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v3")
-            If Not Directory.Exists(tmpDir) Then Directory.CreateDirectory(tmpDir)
-            _highScoreMusicFile = Path.Combine(tmpDir, "highscore.mid")
-            Dim old = _musicStyle : _musicStyle = 6 : File.WriteAllBytes(_highScoreMusicFile, GenerateMidiBytes()) : _musicStyle = old
-            mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("open """ & _highScoreMusicFile & """ alias bgmusic", Nothing, 0, IntPtr.Zero)
-            mciSendString("setaudio bgmusic volume to " & CInt(GetEffectiveMusicVolume() * 10).ToString(), Nothing, 0, IntPtr.Zero)
-            mciSendString("play bgmusic notify", Nothing, 0, _hwnd) : _musicPlaying = True : _usingHighScoreMusic = True
-        Catch : End Try
-    End Sub
+        Private Sub ChangeMusic()
+            ScheduleMusicStart(60)
+        End Sub
 
-    Private Sub UpdateMusicVolume()
-        Try : mciSendString("setaudio bgmusic volume to " & CInt(GetEffectiveMusicVolume() * 10).ToString(), Nothing, 0, IntPtr.Zero) : Catch : End Try
-    End Sub
-
-    Private Function GetEffectiveMusicVolume() As Integer
-        Return Math.Max(0, Math.Min(_musicVolume, 100))
-    End Function
-
-    Private Sub ChangeMusic()
-        ScheduleMusicStart(60)
-    End Sub
-
-    Private Sub CleanupMusic()
-        Try
-            mciSendString("stop bgmusic", Nothing, 0, IntPtr.Zero) : mciSendString("close bgmusic", Nothing, 0, IntPtr.Zero) : _musicPlaying = False
-            If _musicFiles IsNot Nothing Then
-                For Each f In _musicFiles
-                    If Not String.IsNullOrEmpty(f) AndAlso File.Exists(f) Then Try : File.Delete(f) : Catch : End Try
-                Next
-            End If
-            Dim tmpDir = Path.Combine(Path.GetTempPath(), "cl_brickblast_wpf_music_v3")
-            If Directory.Exists(tmpDir) Then Try : Directory.Delete(tmpDir, True) : Catch : End Try
-        Catch : End Try
-    End Sub
+        Private Sub CleanupMusic()
+            Try
+                If _musicPlayer IsNot Nothing Then
+                    _musicPlayer.Stop()
+                    _musicPlayer.Close()
+                End If
+                _musicPlaying = False
+            Catch : End Try
+        End Sub
 #End Region
 
 End Class
