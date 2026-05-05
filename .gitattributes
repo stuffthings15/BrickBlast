@@ -7,8 +7,8 @@ versions/linux/bin/* filter=lfs diff=lfs merge=lfs -text
 *.exe filter=lfs diff=lfs merge=lfs -text
 *.apk filter=lfs diff=lfs merge=lfs -text
 *.aab filter=lfs diff=lfs merge=lfs -text
-versions/macos/osx-x64/anime[[:space:]]finder[[:space:]]macos filter=lfs diff=lfs merge=lfs -text
-versions/macos/osx-arm64/anime[[:space:]]finder[[:space:]]macos filter=lfs diff=lfs merge=lfs -text
 *.msix filter=lfs diff=lfs merge=lfs -text
 *.msixbundle filter=lfs diff=lfs merge=lfs -text
 *.pfx filter=lfs diff=lfs merge=lfs -text
+versions/macos/osx-x64/anime[[:space:]]finder[[:space:]]macos filter=lfs diff=lfs merge=lfs -text
+versions/macos/osx-arm64/anime[[:space:]]finder[[:space:]]macos filter=lfs diff=lfs merge=lfs -text

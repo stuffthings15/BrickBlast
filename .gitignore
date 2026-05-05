@@ -24,3 +24,7 @@ versions/windows-wpf/BrickBlast.pdb
 versions/windows-wpf/*.dll
 mobile/ios/
 dist/
+
+msix/stage_x64/
+msix/stage_arm64/
+msix/bundle_stage/
