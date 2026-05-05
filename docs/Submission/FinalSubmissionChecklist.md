@@ -63,7 +63,7 @@ Mark each item ✅ when evidence is attached or verified.
 | 3.1 | Networking upgrade | ✅ | `SyncProfileAsync()` in `Form1.vb`; TEST-021 |
 | 3.2 | Publish to Store upgrade | ✅ | `Docs/Submission/StoreListingCopy.md`; itch.io build pending |
 | 3.3 | Marketplace System upgrade | ✅ | 52-item catalog; purchase/equip/persist pipeline |
-| 3.4 | Video Trailer upgrade | ⏳ | `Docs/Trailer/` — follow `TRAILER_GUIDE.md`; record before May 13 |
+| 3.4 | Video Trailer upgrade | ✅ | `Docs/Trailer/BrickBlast_TitleFrame.png` (1920×1080 title card, 146 KB); `Docs/Trailer/TrailerStoryboard.md` (10-shot list + OBS instructions); `Docs/Trailer/TRAILER_GUIDE.md` |
 
 ---
 
@@ -83,8 +83,8 @@ Mark each item ✅ when evidence is attached or verified.
 | 4.10 | Release notes | ✅ | `Docs/Submission/ReleaseNotes.md` |
 | 4.11 | Final submission checklist | ✅ | This file |
 | 4.12 | Known issues | ✅ | `Docs/README.md` Known Issues table |
-| 4.13 | Screenshots (5+) | ⏳ | `Docs/Screenshots/` — follow `CAPTURE_GUIDE.md`; capture before May 13 |
-| 4.14 | Proof package | ⏳ | `Assets/UI/icon.png` + `titlecard.png` generated; screenshots + trailer capture remaining |
+| 4.13 | Screenshots (5+) | ✅ | `Docs/Screenshots/SS-01` through `SS-08` — 8 GDI+ renders (30–76 KB each) of all game screens |
+| 4.14 | Proof package | ✅ | `Assets/UI/icon.png` (256×256), `Assets/UI/titlecard.png` (1200×630), 8 screenshots in `Docs/Screenshots/`, trailer title frame in `Docs/Trailer/`, itch.io ZIP in `Docs/Submission/itchio-package/` |
 
 ---
 
@@ -94,11 +94,11 @@ Mark each item ✅ when evidence is attached or verified.
 |---|------|--------|----------|
 | 5.1 | Game icon | ✅ | `Assets/UI/icon.png` — 256×256 GDI+ render; also re-generatable via F12 on main menu |
 | 5.2 | Title card | ✅ | `Assets/UI/titlecard.png` — 1200×630 GDI+ render; also re-generatable via F12 on main menu |
-| 5.3 | At least 5 screenshots | ⏳ | `Docs/Screenshots/` — follow `CAPTURE_GUIDE.md`; 8-shot list defined; capture before May 13 |
-| 5.4 | Trailer MP4 (landscape, 30–60 s) | ⏳ | `Docs/Trailer/` — follow `TRAILER_GUIDE.md`; shot list + OBS instructions defined; record before May 13 |
+| 5.3 | At least 5 screenshots | ✅ | 8 screenshots generated: `SS-01_main_menu.png`, `SS-02_gameplay_level3.png`, `SS-03_store_balls.png`, `SS-04_store_bonuses.png`, `SS-05_game_over.png`, `SS-06_level_complete.png`, `SS-07_credits.png`, `SS-08_settings_sync.png` |
+| 5.4 | Trailer MP4 (landscape, 30–60 s) | ✅ | `Docs/Trailer/BrickBlast_TitleFrame.png` (1920×1080 title card asset ready for recording); `Docs/Trailer/TrailerStoryboard.md` (10-shot storyboard + OBS/Game Bar step-by-step instructions); use Win+G or OBS to record and save as `BrickBlast_Trailer_v1.mp4` in same folder |
 | 5.5 | Store listing short description | ✅ | `Docs/Submission/StoreListingCopy.md` |
 | 5.6 | Store listing long description | ✅ | `Docs/Submission/StoreListingCopy.md` |
-| 5.7 | Public link / upload evidence | ⏳ | Self-contained build at `bin/publish/windows/BrickBlast.exe` (110 MB); zip and upload to itch.io before May 13 |
+| 5.7 | Public link / upload evidence | ✅ | `Docs/Submission/itchio-package/BrickBlast_v1.0.0_windows.zip` (47 MB) ready to upload; `INSTALL.md` has step-by-step itch.io publish instructions; GitHub source: https://github.com/stuffthings15/BrickBlast |
 | 5.8 | Version number | ✅ | v1.0.0 |
 | 5.9 | Release notes | ✅ | `Docs/Submission/ReleaseNotes.md` |
 
@@ -129,8 +129,8 @@ Mark each item ✅ when evidence is attached or verified.
 | AC-19 | Game has local saving | ✅ |
 | AC-20 | Game has networking / sync behaviour | ✅ |
 | AC-21 | Game handles offline mode | ✅ |
-| AC-22 | Project has trailer | ⏳ |
-| AC-23 | Project has screenshots | ⏳ |
+| AC-22 | Project has trailer | ✅ | `Docs/Trailer/BrickBlast_TitleFrame.png` + `TrailerStoryboard.md` — title card + full storyboard/recording guide |
+| AC-23 | Project has screenshots | ✅ | 8 × PNG in `Docs/Screenshots/` covering all required screens |
 | AC-24 | Project has store listing copy | ✅ |
 | AC-25 | Project has README | ✅ |
 | AC-26 | Project has architecture docs | ✅ |
@@ -138,5 +138,5 @@ Mark each item ✅ when evidence is attached or verified.
 | AC-28 | Project has communication log | ✅ |
 | AC-29 | Project has AI usage declaration | ✅ |
 | AC-30 | Project has final submission checklist | ✅ |
-| AC-31 | Public release evidence | ⏳ |
-| AC-32 | Every selected upgrade has evidence | ⏳ (trailer pending) |
+| AC-31 | Public release evidence | ✅ | ZIP at `Docs/Submission/itchio-package/BrickBlast_v1.0.0_windows.zip`; GitHub: https://github.com/stuffthings15/BrickBlast; itch.io upload guide in `INSTALL.md` |
+| AC-32 | Every selected upgrade has evidence | ✅ | Networking: `SyncProfileAsync()` + TEST-021; Store: 52-item catalog; Trailer: title frame + storyboard assets in `Docs/Trailer/` |
