@@ -108,12 +108,17 @@ Public Class Form1
         Menu
         Playing
         Paused
+        PauseMenu
         LevelComplete
         GameOver
         Options
         HighScore
         Store
         Credits
+        Stats
+        DailyChallenge
+        PowerUpRoulette
+        Endless
     End Enum
 
     ' ── Store item categories ──────────────────────────────────────────────────
@@ -121,6 +126,7 @@ Public Class Form1
         Balls
         Bricks
         Bonuses
+        Paddles
     End Enum
 
     Private Structure StoreItem
@@ -151,6 +157,9 @@ Public Class Form1
         Public HitsLeft As Integer
         Public Points As Integer
         Public Row As Integer
+        Public IsIndestructible As Boolean   ' Feature 4: steel bricks that only deflect
+        Public BaseX As Single               ' Feature 7: base X for wave oscillation
+        Public HasWave As Boolean            ' Feature 7: this brick oscillates
     End Structure
 
     Private Enum PowerUpType
@@ -318,7 +327,7 @@ Public Class Form1
     Private _activeBonusPack As String = "base"
 
     ' Coin earn rates (per brick broken, scaled by combo)
-    Private Const COIN_PER_BRICK As Integer = 1
+    Private Const COIN_PER_BRICK As Integer = 3
     Private Const COIN_LEVEL_BONUS As Integer = 10
 
     ' Store catalog — base items are free; others cost coins
@@ -344,6 +353,15 @@ Public Class Form1
         Public Property ActiveBallSkin As String
         Public Property ActiveBrickPalette As String
         Public Property ActiveBonusPack As String
+        Public Property ActivePaddleSkin As String     ' Feature 8: paddle skins
+        Public Property TotalBricksDestroyed As Integer ' Feature 6: stats
+        Public Property TotalPlaytimeSeconds As Integer ' Feature 6: stats
+        Public Property BestCombo As Integer            ' Feature 6: stats
+        Public Property TotalCoinsEarned As Integer     ' Feature 6: stats
+        Public Property LevelsCompleted As Integer      ' Feature 6: stats
+        Public Property DailyBestScore As Integer       ' Feature 1: daily challenge
+        Public Property DailyLastDate As String         ' Feature 1: daily challenge date
+        Public Property EndlessBestScore As Integer     ' Feature 10: endless mode
         Public Sub New()
             OwnedItems = New List(Of String)
         End Sub
@@ -351,6 +369,55 @@ Public Class Form1
 
     Private _ownedItems As New HashSet(Of String)
     Private _devMode As Boolean = False
+
+    ' ── Feature 1: Daily Challenge ─────────────────────────────────────────
+    Private _dailyChallengeScore As Integer = 0
+    Private _dailyBestScore As Integer = 0
+    Private _dailyLastDate As String = ""
+    Private _dailySeed As Integer = 0
+    Private _isDailyMode As Boolean = False
+
+    ' ── Feature 2: Trajectory Indicator ──────────────────────────────────
+    Private _showTrajectory As Boolean = True   ' T key toggles; on by default
+
+    ' ── Feature 3: Power-Up Roulette ─────────────────────────────────────
+    Private _rouletteActive As Boolean = False
+    Private _rouletteSlots(2) As PowerUpType     ' 3 visible slots
+    Private _rouletteFrame As Integer = 0        ' spin frame counter
+    Private _rouletteSpinFrames As Integer = 0   ' remaining spin frames
+    Private _rouletteConfirmed As Boolean = False
+    Private _rouletteResult As PowerUpType = PowerUpType.BlueBallGrow
+    Private _rouletteCountdown As Integer = 0    ' frames until state exits
+
+    ' ── Feature 4: Indestructible (steel) Bricks ─────────────────────────
+    ' Controlled per-level inside SetupLevel; no extra variable needed.
+
+    ' ── Feature 5: Combo Streak / Callout Text ───────────────────────────
+    Private _streakCallout As String = ""
+    Private _streakCalloutTimer As Integer = 0
+
+    ' ── Feature 6: Player Stats ──────────────────────────────────────────
+    Private _statBricksDestroyed As Integer = 0
+    Private _statPlaytimeSeconds As Integer = 0
+    Private _statPlaytimeFrames As Integer = 0   ' counts up to 60 each second
+    Private _statBestCombo As Integer = 0
+    Private _statTotalCoinsEarned As Integer = 0
+    Private _statLevelsCompleted As Integer = 0
+
+    ' ── Feature 7: Wave Bricks ───────────────────────────────────────────
+    Private _waveTick As Single = 0.0F           ' incremented each frame
+
+    ' ── Feature 8: Paddle Skins ──────────────────────────────────────────
+    Private _activePaddleSkin As String = "base"
+
+    ' ── Feature 9: Multi-Ball Streak Meter ───────────────────────────────
+    Private _streakMeter As Integer = 0          ' bricks in current rally without losing ball
+    Private _streakMilestone As Integer = 15     ' bricks needed for a streak reward
+
+    ' ── Feature 10: Endless Mode ─────────────────────────────────────────
+    Private _isEndlessMode As Boolean = False
+    Private _endlessBestScore As Integer = 0
+    Private _endlessLoopsCompleted As Integer = 0   ' how many times board was re-generated
 
     ' ── Networking ──────────────────────────────────────────────────────────
     Private Const SyncEndpointUrl As String = "https://your-sync-endpoint.example.com/api/profile"
@@ -509,11 +576,11 @@ Public Class Form1
             Dim CARDS_VIS = Math.Max(1, CInt(Math.Floor((kGridH + KBD_ROW_GAP) / (KBD_CARD_H + KBD_ROW_GAP))))
             Select Case e.KeyCode
                 Case Keys.Left, Keys.A
-                    _storeCategory = CType((_storeCategory - 1 + 3) Mod 3, StoreCategory)
+                    _storeCategory = CType((_storeCategory - 1 + 4) Mod 4, StoreCategory)
                     _storeSelectedIndex = 0
                     _storeScrollOffset = 0
                 Case Keys.Right, Keys.D
-                    _storeCategory = CType((_storeCategory + 1) Mod 3, StoreCategory)
+                    _storeCategory = CType((_storeCategory + 1) Mod 4, StoreCategory)
                     _storeSelectedIndex = 0
                     _storeScrollOffset = 0
                 Case Keys.Up
@@ -614,6 +681,20 @@ Public Class Form1
             Return
         End If
 
+        ' ── Roulette: Space / Enter instantly applies the result ──────────────
+        If _state = GameState.PowerUpRoulette Then
+            If e.KeyCode = Keys.Space OrElse e.KeyCode = Keys.Enter Then
+                _rouletteResult = _rouletteSlots(1)
+                ApplyPowerUp(_rouletteResult)
+                _rouletteActive = False
+                _rouletteConfirmed = False
+                _rouletteSpinFrames = 0
+                _rouletteCountdown = 0
+                _state = GameState.Playing
+            End If
+            Return
+        End If
+
         Select Case e.KeyCode
             Case Keys.Left, Keys.A
                 _leftPressed = True
@@ -624,25 +705,50 @@ Public Class Form1
                     StartNewGame()
                 ElseIf _state = GameState.LevelComplete Then
                     NextLevel()
-                ElseIf _state = GameState.Paused Then
+                ElseIf _state = GameState.Paused OrElse _state = GameState.PauseMenu Then
                     _state = GameState.Playing
                 ElseIf _state = GameState.Playing Then
                     _speedBoost = Not _speedBoost
                     PlaySFX(_sfxData(_sfxStyle)(10), 80)
+                ElseIf _state = GameState.DailyChallenge Then
+                    StartDailyChallenge()
+                ElseIf _state = GameState.Endless Then
+                    StartEndlessMode()
                 End If
-            Case Keys.P, Keys.Escape
+            Case Keys.P
                 If _state = GameState.Playing Then
                     _state = GameState.Paused
                 ElseIf _state = GameState.Paused Then
                     _state = GameState.Playing
+                ElseIf _state = GameState.PauseMenu Then
+                    _state = GameState.Playing
+                End If
+            Case Keys.Escape
+                If _state = GameState.Playing OrElse _state = GameState.Paused Then
+                    _state = GameState.PauseMenu
+                ElseIf _state = GameState.PauseMenu Then
+                    _state = GameState.Playing
+                ElseIf _state = GameState.Credits Then
+                    _state = GameState.Menu
+                ElseIf _state = GameState.Stats Then
+                    _state = GameState.Menu
+                ElseIf _state = GameState.DailyChallenge Then
+                    _state = GameState.Menu
+                ElseIf _state = GameState.Endless Then
+                    _state = GameState.Menu
                 End If
             Case Keys.F
                 If _state = GameState.Playing Then
                     _speedBoost = Not _speedBoost
                     PlaySFX(_sfxData(_sfxStyle)(10), 80)
                 End If
+            Case Keys.T
+                If _state = GameState.Playing Then
+                    _showTrajectory = Not _showTrajectory
+                End If
             Case Keys.H, Keys.O
-                If _state = GameState.Menu OrElse _state = GameState.Playing OrElse _state = GameState.Paused Then
+                If _state = GameState.Menu OrElse _state = GameState.Playing OrElse
+                   _state = GameState.Paused OrElse _state = GameState.PauseMenu Then
                     _previousState = _state
                     _state = GameState.Options
                 End If
@@ -656,13 +762,22 @@ Public Class Form1
                 If _state = GameState.Menu Then
                     _state = GameState.Credits
                 End If
+            Case Keys.Z
+                If _state = GameState.Menu Then
+                    _state = GameState.Stats
+                End If
+            Case Keys.D
+                If _state = GameState.Menu Then
+                    _isDailyMode = False  ' go to selection screen first
+                    _state = GameState.DailyChallenge
+                End If
+            Case Keys.E
+                If _state = GameState.Menu Then
+                    _state = GameState.Endless
+                End If
             Case Keys.F12
                 If _state = GameState.Menu Then
                     ExportMarketingAssets()
-                End If
-            Case Keys.Escape
-                If _state = GameState.Credits Then
-                    _state = GameState.Menu
                 End If
         End Select
     End Sub
@@ -749,6 +864,24 @@ Public Class Form1
             _state = GameState.Playing
             Return
         End If
+        If _state = GameState.PauseMenu Then
+            Dim pmPw = 320, pmPh = 200
+            Dim pmPx = CSng((LOGICAL_WIDTH - pmPw) / 2)
+            Dim pmPy = CSng((LOGICAL_HEIGHT - pmPh) / 2)
+            Dim pmBtnW = 200, pmBtnH = 44, pmGap = 16
+            Dim pmBx = CSng(pmPx + (pmPw - pmBtnW) / 2)
+            Dim pmBy1 = pmPy + 80
+            Dim pmBy2 = pmBy1 + pmBtnH + pmGap
+            If mx >= pmBx AndAlso mx < pmBx + pmBtnW AndAlso my >= pmBy1 AndAlso my < pmBy1 + pmBtnH Then
+                _state = GameState.Menu
+                Return
+            End If
+            If mx >= pmBx AndAlso mx < pmBx + pmBtnW AndAlso my >= pmBy2 AndAlso my < pmBy2 + pmBtnH Then
+                Application.Exit()
+                Return
+            End If
+            Return
+        End If
         If _state = GameState.LevelComplete Then
             NextLevel()
             Return
@@ -823,7 +956,7 @@ Public Class Form1
             Dim rowsVisible_HT = Math.Max(1, CInt(Math.Floor((gridH_HT + ROW_GAP_HT) / (CARD_H_HT + ROW_GAP_HT))))
 
             ' Tab row
-            Const TAB_COUNT_HT As Integer = 3
+            Const TAB_COUNT_HT As Integer = 4
             Dim totalTabW_HT = CInt(innerW_HT * 0.88)
             Dim tabW_HT = (totalTabW_HT - (TAB_COUNT_HT - 1) * 8) \ TAB_COUNT_HT
             Dim tabsLeft_HT = CSng(innerX_HT + (innerW_HT - totalTabW_HT) / 2)
@@ -950,9 +1083,10 @@ Public Class Form1
                 DrawNameEntry(g)
             Case GameState.Menu
                 DrawMenu(g)
-            Case GameState.Playing, GameState.Paused
+            Case GameState.Playing, GameState.Paused, GameState.PauseMenu
                 DrawGame(g)
                 If _state = GameState.Paused Then DrawOverlay(g, "PAUSED", "Press SPACE to resume")
+                If _state = GameState.PauseMenu Then DrawPauseMenu(g)
             Case GameState.LevelComplete
                 DrawGame(g)
                 DrawOverlay(g, $"LEVEL {_level} COMPLETE!", "Press SPACE for next level", True)
@@ -960,7 +1094,7 @@ Public Class Form1
                 DrawGame(g)
                 DrawGameOverScreen(g)
             Case GameState.Options
-                If _previousState = GameState.Playing OrElse _previousState = GameState.Paused Then DrawGame(g)
+                If _previousState = GameState.Playing OrElse _previousState = GameState.Paused OrElse _previousState = GameState.PauseMenu Then DrawGame(g)
                 DrawOptions(g)
             Case GameState.HighScore
                 DrawHighScore(g)
@@ -968,6 +1102,16 @@ Public Class Form1
                 DrawStore(g)
             Case GameState.Credits
                 DrawCredits(g)
+            Case GameState.Stats
+                DrawStats(g)
+            Case GameState.PowerUpRoulette
+                DrawGame(g)
+                DrawPowerUpRoulette(g)
+            Case GameState.DailyChallenge
+                DrawDailyChallengeMenu(g)
+            Case GameState.Endless
+                ' Endless uses the standard Playing flow — handled by GameTimer
+                DrawGame(g)
         End Select
     End Sub
 #End Region
@@ -985,13 +1129,16 @@ Public Class Form1
                 StartHighScoreMusic()
             End If
         End If
-        If _state = GameState.Playing Then
+        If _state = GameState.Playing OrElse _state = GameState.PowerUpRoulette Then
             UpdatePaddle()
-            UpdateBalls()
-            UpdatePowerUps()
             UpdateParticles()
             UpdateTimers()
-            CheckLevelComplete()
+            UpdateWaveBricks()
+            If _state = GameState.Playing Then
+                UpdateBalls()
+                UpdatePowerUps()
+                CheckLevelComplete()
+            End If
         End If
         If _screenShake > 0 Then _screenShake -= 1
         Me.Invalidate()
@@ -1206,6 +1353,7 @@ Public Class Form1
         _balls.Clear()
         _powerUps.Clear()
         _particles.Clear()
+        _waveTick = 0.0F
 
         Dim b As Ball
         b.X = LOGICAL_WIDTH / 2.0F
@@ -1270,7 +1418,7 @@ Public Class Form1
                 bk.Color1 = palette(ci)(0)
                 bk.Color2 = palette(ci)(1)
                 bk.Row = row
-                bk.Points = (brickRows - row) * 10
+                bk.Points = 3
 
                 ' Hit points scale with level
                 Dim hits = 1
@@ -1281,6 +1429,21 @@ Public Class Form1
                 If _level >= 12 Then hits = Math.Max(hits, If(row < 2, 4, 3))
                 bk.HitsLeft = hits
                 bk.Alive = True
+
+                ' Wave bricks: every 3rd column on levels 5+ gets a gentle horizontal sway
+                If _level >= 5 AndAlso col Mod 3 = 0 AndAlso Not _colorblindMode Then
+                    bk.HasWave = True
+                    bk.BaseX = bk.Rect.X
+                End If
+
+                ' Indestructible (steel) bricks: appear on level 7+; placed at row 0
+                If _level >= 7 AndAlso row = 0 AndAlso col Mod 4 = 0 Then
+                    bk.IsIndestructible = True
+                    bk.HitsLeft = 999
+                    bk.Color1 = Color.FromArgb(160, 170, 185)
+                    bk.Color2 = Color.FromArgb(220, 225, 235)
+                End If
+
                 _bricks.Add(bk)
             Next
         Next
@@ -2250,15 +2413,38 @@ Public Class Form1
                 If Not _bricks(j).Alive Then Continue For
                 Dim bk = _bricks(j)
                 If BallIntersectsRect(b, bk.Rect) Then
+                    ' Indestructible bricks just bounce the ball
+                    If bk.IsIndestructible Then
+                        Dim ol2 = (b.X + _ballRadius) - bk.Rect.Left
+                        Dim or3 = bk.Rect.Right - (b.X - _ballRadius)
+                        Dim ot2 = (b.Y + _ballRadius) - bk.Rect.Top
+                        Dim ob3 = bk.Rect.Bottom - (b.Y - _ballRadius)
+                        If Math.Min(ol2, or3) < Math.Min(ot2, ob3) Then b.DX = -b.DX Else b.DY = -b.DY
+                        PlaySFX(500, 25)
+                        _bricks(j) = bk
+                        Exit For
+                    End If
+
                     bk.HitsLeft -= 1
                     If bk.HitsLeft <= 0 Then
                         bk.Alive = False
                         _combo += 1 : _comboTimer = 90
+                        _streakMeter += 1
                         _score += bk.Points * Math.Min(_combo, 8)
+                        ' Stats
+                        _statBricksDestroyed += 1
+                        If _combo > _statBestCombo Then _statBestCombo = _combo
+                        ' Streak milestone reward
+                        If _streakMeter > 0 AndAlso _streakMeter Mod _streakMilestone = 0 Then
+                            TriggerStreakReward()
+                        End If
+                        ' Streak callout text
+                        SetStreakCallout(_combo)
                         ' Earn coins: 1 per brick + 1 extra per active combo level
                         Dim coinsEarned = COIN_PER_BRICK + Math.Max(0, Math.Min(_combo, 8) - 1)
                         _coinBalance += coinsEarned
                         _coinsEarnedThisSession += coinsEarned
+                        _statTotalCoinsEarned += coinsEarned
                         SpawnParticles(bk.Rect.X + bk.Rect.Width / 2, bk.Rect.Y + bk.Rect.Height / 2, bk.Color1, PARTICLE_COUNT)
                         If _combo >= 2 Then PlayComboSound() Else PlayBrickHit()
                         _screenShake = 3
@@ -2286,6 +2472,7 @@ Public Class Form1
             _lives -= 1
             PlayBallLost()
             _screenShake = 10
+            _streakMeter = 0   ' reset streak on ball loss
             If _lives <= 0 Then
                 If _score > _highScore Then _highScore = _score
                 SaveStore()
@@ -2354,6 +2541,46 @@ Public Class Form1
             If _paddleWidthTimer <= 0 Then _paddleWidth = PADDLE_WIDTH
         End If
         If _getReadyFrames > 0 Then _getReadyFrames -= 1
+
+        ' Wave brick animation
+        _waveTick += 0.04F
+
+        ' Streak callout countdown
+        If _streakCalloutTimer > 0 Then _streakCalloutTimer -= 1
+
+        ' Roulette spin countdown (spins when active, locks when done)
+        If _rouletteActive AndAlso _rouletteSpinFrames > 0 Then
+            _rouletteSpinFrames -= 1
+            _rouletteFrame += 1
+            If _rouletteFrame Mod 4 = 0 Then
+                For s = 0 To 2
+                    _rouletteSlots(s) = CType(_rng.Next(7), PowerUpType)
+                Next
+            End If
+            If _rouletteSpinFrames = 0 Then
+                _rouletteResult = _rouletteSlots(1)   ' middle slot wins
+                _rouletteConfirmed = True
+                _rouletteCountdown = 40               ' ~0.67 s display then auto-apply
+            End If
+        End If
+        If _rouletteConfirmed AndAlso _rouletteCountdown > 0 Then
+            _rouletteCountdown -= 1
+            If _rouletteCountdown = 0 Then
+                ApplyPowerUp(_rouletteResult)
+                _rouletteActive = False
+                _rouletteConfirmed = False
+                _state = GameState.Playing
+            End If
+        End If
+
+        ' Playtime stat counter
+        If _state = GameState.Playing Then
+            _statPlaytimeFrames += 1
+            If _statPlaytimeFrames >= 60 Then
+                _statPlaytimeFrames = 0
+                _statPlaytimeSeconds += 1
+            End If
+        End If
     End Sub
 
     Private Sub UpdateStarField()
@@ -2367,14 +2594,108 @@ Public Class Form1
     End Sub
 
     Private Sub CheckLevelComplete()
-        If _bricks.All(Function(bk) Not bk.Alive) Then
+        If _bricks.All(Function(bk) Not bk.Alive OrElse bk.IsIndestructible) Then
             _coinBalance += COIN_LEVEL_BONUS
             _coinsEarnedThisSession += COIN_LEVEL_BONUS
+            _statLevelsCompleted += 1
+
+            If _isEndlessMode Then
+                _endlessLoopsCompleted += 1
+                If _score > _endlessBestScore Then _endlessBestScore = _score
+                LogEvent("EndlessLoop", $"player={_playerName} loops={_endlessLoopsCompleted} score={_score}")
+                ' Regenerate board at a slightly higher difficulty
+                _level = Math.Min(_level + 1, 30)
+                SaveStore()
+                SetupLevel()
+                Return
+            End If
+
+            If _isDailyMode Then
+                _dailyChallengeScore = _score
+                If _score > _dailyBestScore Then _dailyBestScore = _score
+            End If
+
             LogEvent("LevelComplete", $"player={_playerName} level={_level} score={_score}")
             SaveStore()
             _state = GameState.LevelComplete
             PlayLevelWin()
         End If
+    End Sub
+
+    ' ── Feature 5: Streak callout text ───────────────────────────────────────
+    Private Sub SetStreakCallout(combo As Integer)
+        If combo < 3 Then Return
+        Select Case combo
+            Case 3 : _streakCallout = "NICE!" : _streakCalloutTimer = 70
+            Case 4 : _streakCallout = "HOT STREAK!" : _streakCalloutTimer = 80
+            Case 5 : _streakCallout = "ON FIRE! 🔥" : _streakCalloutTimer = 90
+            Case 6, 7 : _streakCallout = "UNSTOPPABLE!" : _streakCalloutTimer = 95
+            Case 8, 9 : _streakCallout = "GODLIKE!!" : _streakCalloutTimer = 100
+            Case Else : _streakCallout = "LEGENDARY!!!" : _streakCalloutTimer = 110
+        End Select
+    End Sub
+
+    ' ── Feature 9: Streak milestone — spawn a roulette when hitting the meter ──
+    Private Sub TriggerStreakReward()
+        If _rouletteActive Then Return
+        _rouletteActive = True
+        _rouletteConfirmed = False
+        _rouletteCountdown = 0
+        _rouletteSpinFrames = 10   ' fast spin — ~0.17 s
+        _rouletteFrame = 0
+        For s = 0 To 2
+            _rouletteSlots(s) = CType(_rng.Next(7), PowerUpType)
+        Next
+        _state = GameState.PowerUpRoulette
+        PlaySFX(800, 60)
+    End Sub
+
+    ' ── Feature 1: Daily Challenge setup ─────────────────────────────────────
+    Private Sub StartDailyChallenge()
+        Dim today = DateTime.Now.ToString("yyyy-MM-dd")
+        _isDailyMode = True
+        _isEndlessMode = False
+        If _dailyLastDate <> today Then
+            _dailyLastDate = today
+            _dailyChallengeScore = 0
+        End If
+        _dailySeed = CInt(DateTime.Now.Date.Ticks Mod Integer.MaxValue)
+        _proceduralSeed = _dailySeed
+        _score = 0 : _lives = MAX_LIVES : _level = 1 : _combo = 0 : _comboTimer = 0
+        _pendingHighScore = False : _highScoreDelayFrames = 0
+        _paddleWidth = PADDLE_WIDTH : _paddleWidthTimer = 0
+        _ballRadius = BALL_RADIUS : _speedBoost = False
+        _streakMeter = 0 : _streakCallout = "" : _streakCalloutTimer = 0
+        SetupLevel()
+        _state = GameState.Playing
+        LogEvent("DailyChallengeStarted", $"player={_playerName} date={today}")
+    End Sub
+
+    ' ── Feature 10: Endless Mode setup ──────────────────────────────────────
+    Private Sub StartEndlessMode()
+        _isEndlessMode = True
+        _isDailyMode = False
+        _endlessLoopsCompleted = 0
+        _score = 0 : _lives = MAX_LIVES : _level = 1 : _combo = 0 : _comboTimer = 0
+        _pendingHighScore = False : _highScoreDelayFrames = 0
+        _paddleWidth = PADDLE_WIDTH : _paddleWidthTimer = 0
+        _ballRadius = BALL_RADIUS : _speedBoost = False
+        _streakMeter = 0 : _streakCallout = "" : _streakCalloutTimer = 0
+        _proceduralSeed = Environment.TickCount
+        SetupLevel()
+        _state = GameState.Playing
+        LogEvent("EndlessModeStarted", $"player={_playerName}")
+    End Sub
+
+    ' ── Feature 7: Wave brick position tick (called from game loop) ───────────
+    Private Sub UpdateWaveBricks()
+        For i = 0 To _bricks.Count - 1
+            If Not _bricks(i).HasWave OrElse Not _bricks(i).Alive Then Continue For
+            Dim bk = _bricks(i)
+            Dim waveOffset = CSng(Math.Sin(_waveTick + i * 0.4) * 10.0)
+            bk.Rect = New RectangleF(bk.BaseX + waveOffset, bk.Rect.Y, bk.Rect.Width, bk.Rect.Height)
+            _bricks(i) = bk
+        Next
     End Sub
 #End Region
 
@@ -2771,6 +3092,32 @@ Public Class Form1
             .Id = "golden", .Name = "Golden Age Pack", .Description = "Coins, laurels, crowns & golden rings.",
             .Price = 700, .Category = StoreCategory.Bonuses, .IsBase = False})
 
+        ' ── Paddle Skins ─────────────────────────────────────────────────────────
+        _storeItems.Add(New StoreItem With {
+            .Id = "base", .Name = "Classic Paddle", .Description = "Default blue paddle.",
+            .Price = 0, .Category = StoreCategory.Paddles, .IsBase = True})
+        _storeItems.Add(New StoreItem With {
+            .Id = "fire", .Name = "Fire Paddle", .Description = "Blazing orange streak.",
+            .Price = 180, .Category = StoreCategory.Paddles, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "ice", .Name = "Ice Paddle", .Description = "Arctic frost shimmer.",
+            .Price = 180, .Category = StoreCategory.Paddles, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "gold", .Name = "Gold Paddle", .Description = "Gleaming gold bar.",
+            .Price = 400, .Category = StoreCategory.Paddles, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "neon", .Name = "Neon Paddle", .Description = "Electric cyan glow.",
+            .Price = 300, .Category = StoreCategory.Paddles, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "shadow", .Name = "Shadow Paddle", .Description = "Dark void silhouette.",
+            .Price = 350, .Category = StoreCategory.Paddles, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "rainbow", .Name = "Rainbow Paddle", .Description = "Cycles all colors.",
+            .Price = 600, .Category = StoreCategory.Paddles, .IsBase = False})
+        _storeItems.Add(New StoreItem With {
+            .Id = "sakura", .Name = "Sakura Paddle", .Description = "Cherry-blossom pink.",
+            .Price = 280, .Category = StoreCategory.Paddles, .IsBase = False})
+
         ' Base items are always owned
         For Each item In _storeItems
             If item.IsBase Then _ownedItems.Add(item.Category.ToString() & "_" & item.Id)
@@ -2792,6 +3139,15 @@ Public Class Form1
             If Not String.IsNullOrWhiteSpace(data.ActiveBallSkin) Then _activeBallSkin = data.ActiveBallSkin
             If Not String.IsNullOrWhiteSpace(data.ActiveBrickPalette) Then _activeBrickPalette = data.ActiveBrickPalette
             If Not String.IsNullOrWhiteSpace(data.ActiveBonusPack) Then _activeBonusPack = data.ActiveBonusPack
+            If Not String.IsNullOrWhiteSpace(data.ActivePaddleSkin) Then _activePaddleSkin = data.ActivePaddleSkin
+            _statBricksDestroyed = data.TotalBricksDestroyed
+            _statPlaytimeSeconds = data.TotalPlaytimeSeconds
+            _statBestCombo = data.BestCombo
+            _statTotalCoinsEarned = data.TotalCoinsEarned
+            _statLevelsCompleted = data.LevelsCompleted
+            _dailyBestScore = data.DailyBestScore
+            _dailyLastDate = If(data.DailyLastDate, "")
+            _endlessBestScore = data.EndlessBestScore
         Catch
         End Try
     End Sub
@@ -2808,7 +3164,16 @@ Public Class Form1
                 .OwnedItems = _ownedItems.ToList(),
                 .ActiveBallSkin = _activeBallSkin,
                 .ActiveBrickPalette = _activeBrickPalette,
-                .ActiveBonusPack = _activeBonusPack
+                .ActiveBonusPack = _activeBonusPack,
+                .ActivePaddleSkin = _activePaddleSkin,
+                .TotalBricksDestroyed = _statBricksDestroyed,
+                .TotalPlaytimeSeconds = _statPlaytimeSeconds,
+                .BestCombo = _statBestCombo,
+                .TotalCoinsEarned = _statTotalCoinsEarned,
+                .LevelsCompleted = _statLevelsCompleted,
+                .DailyBestScore = _dailyBestScore,
+                .DailyLastDate = _dailyLastDate,
+                .EndlessBestScore = _endlessBestScore
             }
             File.WriteAllText(_storeSavePath, JsonSerializer.Serialize(data))
             LogEvent("ProfileSaved", $"player={_playerName} coins={_coinBalance}")
@@ -2840,6 +3205,8 @@ Public Class Form1
                 _activeBrickPalette = item.Id
             Case StoreCategory.Bonuses
                 _activeBonusPack = item.Id
+            Case StoreCategory.Paddles
+                _activePaddleSkin = item.Id
         End Select
         LogEvent("ItemEquipped", $"player={_playerName} item={item.Category}_{item.Id}")
         SaveStore()
@@ -2921,6 +3288,31 @@ Public Class Form1
     End Sub
 
     Private Sub DrawMenu(g As Graphics)
+        ' ── Sync pill — top-right, isolated from title and other rows ──────
+        Dim syncLabel = GetSyncLabel()
+        Dim syncColor = If(_syncStatus = "Synced", Color.FromArgb(80, 220, 80),
+                        If(_syncStatus = "Syncing", Color.FromArgb(255, 220, 60),
+                        If(_syncStatus = "Failed", Color.FromArgb(255, 80, 80),
+                        Color.FromArgb(150, 150, 165))))
+        Dim sLblSz = g.MeasureString(syncLabel, _fnt10r)
+        Dim pillW = sLblSz.Width + 22
+        Dim pillH = sLblSz.Height + 8
+        Dim pillX = LOGICAL_WIDTH - pillW - 14
+        Dim pillY = 12.0F
+        Using pillBr As New SolidBrush(Color.FromArgb(160, 0, 0, 30))
+            Using rr = RoundedRect(New RectangleF(pillX, pillY, pillW, pillH), 8)
+                g.FillPath(pillBr, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(80, syncColor), 1)
+            Using rr = RoundedRect(New RectangleF(pillX, pillY, pillW, pillH), 8)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+        Using sBr As New SolidBrush(syncColor)
+            g.DrawString(syncLabel, _fnt10r, sBr, pillX + 11, pillY + 4)
+        End Using
+
         Dim titleY = 140
         Using path As New GraphicsPath()
             Using ff As New FontFamily("Segoe UI")
@@ -2956,25 +3348,27 @@ Public Class Form1
                 g.FillPath(br, path2)
             End Using
         End Using
+        ' ── Press SPACE row (y ≈ 280) ──────────────────────────────────────
         Dim startSpr = TryGetSprite("ui/text_start")
         Dim keySpc = TryGetSprite("ui/key_space")
         If startSpr IsNot Nothing Then
-            g.DrawImage(startSpr, CInt((LOGICAL_WIDTH - 240) / 2), 304, 240, 40)
+            g.DrawImage(startSpr, CInt((LOGICAL_WIDTH - 240) / 2), 280, 240, 40)
         Else
-            DrawCenteredText(g, "Press SPACE to Start", _fnt18r, Color.White, 310)
+            DrawCenteredText(g, "Press SPACE to Start", _fnt18r, Color.White, 286)
         End If
-        If keySpc IsNot Nothing Then g.DrawImage(keySpc, CInt(LOGICAL_WIDTH / 2 + 130), 308, 32, 32)
-        ' Mini leaderboard on front page
+        If keySpc IsNot Nothing Then g.DrawImage(keySpc, CInt(LOGICAL_WIDTH / 2 + 130), 284, 32, 32)
+
+        ' ── Best-scores panel (y = 332, height = 84 → ends 416) ────────────
         If _highScores.Count > 0 Then
             Dim topN = Math.Min(3, _highScores.Count)
             Dim panelH = 16 + topN * 20 + 8
             Using pbr As New SolidBrush(Color.FromArgb(160, 0, 0, 30))
-                Using rr = RoundedRect(New RectangleF(LOGICAL_WIDTH / 2 - 200, 348, 400, panelH), 8)
+                Using rr = RoundedRect(New RectangleF(LOGICAL_WIDTH / 2 - 200, 332, 400, panelH), 8)
                     g.FillPath(pbr, rr)
                 End Using
             End Using
-            DrawCenteredText(g, "BEST SCORES", _fnt10b, Color.FromArgb(255, 240, 100), 351)
-            Dim sy = 368.0F
+            DrawCenteredText(g, "BEST SCORES", _fnt10b, Color.FromArgb(255, 240, 100), 335)
+            Dim sy = 352.0F
             For i = 0 To topN - 1
                 Dim rec = _highScores(i)
                 Dim nm = If(rec.PlayerName.Length > 10, rec.PlayerName.Substring(0, 10), rec.PlayerName.PadRight(10))
@@ -2982,33 +3376,117 @@ Public Class Form1
                 sy += 20
             Next
         ElseIf _highScore > 0 Then
-            DrawCenteredText(g, $"High Score: {_highScore}", _fnt14r, Color.FromArgb(255, 255, 120), 355)
+            DrawCenteredText(g, $"High Score: {_highScore}", _fnt14r, Color.FromArgb(255, 255, 120), 340)
         End If
-        DrawCenteredText(g, ChrW(&H25C6) & $"  Press S for STORE  ({_coinBalance} coins)  " & ChrW(&H25C6), _fnt14b, Color.FromArgb(255, 220, 60), 390)
-        DrawCenteredText(g, ChrW(&H2699) & "  Press H or O for OPTIONS  |  C for CREDITS  " & ChrW(&H2699), _fnt14b, Color.FromArgb(100, 200, 255), 420)
+
+        ' ── Action lines (clear of leaderboard panel) ──────────────────────
+        DrawCenteredText(g, ChrW(&H25C6) & $"  Press S for STORE  ({_coinBalance} coins)  " & ChrW(&H25C6), _fnt14b, Color.FromArgb(255, 220, 60), 432)
+        DrawCenteredText(g, "[D] Daily Challenge   [E] Endless Mode   [Z] Stats", _fnt13b, Color.FromArgb(80, 220, 180), 460)
+        DrawCenteredText(g, ChrW(&H2699) & "  Press H or O for OPTIONS  |  C for CREDITS  " & ChrW(&H2699), _fnt14b, Color.FromArgb(100, 200, 255), 488)
+
+        ' ── Controls row — sprites & label share y=520, sprites are 24 px tall ──
         Dim keyArr = TryGetSprite("ui/key_arrows")
         Dim keyF = TryGetSprite("ui/key_f")
         Dim keyP = TryGetSprite("ui/key_p")
-        If keyArr IsNot Nothing Then g.DrawImage(keyArr, CInt(LOGICAL_WIDTH / 2 - 290), 454, 24, 24)
-        If keyF IsNot Nothing Then g.DrawImage(keyF, CInt(LOGICAL_WIDTH / 2 - 30), 454, 24, 24)
-        If keyP IsNot Nothing Then g.DrawImage(keyP, CInt(LOGICAL_WIDTH / 2 + 130), 454, 24, 24)
-        DrawCenteredText(g, "ARROW KEYS to move  |  F speed boost  |  P pause", _fnt11r, Color.FromArgb(150, 150, 170), 458)
-        DrawCenteredText(g, $"Music: {_musicStyleNames(_musicStyle)}  |  SFX: {_sfxStyleNames(_sfxStyle)}", _fnt11r, Color.FromArgb(120, 140, 180), 488)
-        DrawCenteredText(g, $"Window: {_windowScaleNames(_windowScale)}", _fnt11r, Color.FromArgb(120, 140, 180), 518)
-        DrawCenteredText(g, "Destroy bricks  " & ChrW(8226) & "  Catch power-ups  " & ChrW(8226) & "  Build combos!", _fnt11r, Color.FromArgb(150, 150, 170), 548)
-        DrawCenteredText(g, "BrickBlast: Velocity Market  |  v1.0.0", _fnt10r, Color.FromArgb(80, 90, 110), 570)
-        DrawCenteredText(g, "[F12] Export marketing assets  |  [C] Credits  |  [S] Store  |  [H] Settings", _fnt10r, Color.FromArgb(55, 70, 90), 588)
+        If keyArr IsNot Nothing Then g.DrawImage(keyArr, CInt(LOGICAL_WIDTH / 2 - 290), 518, 24, 24)
+        If keyF IsNot Nothing Then g.DrawImage(keyF, CInt(LOGICAL_WIDTH / 2 - 30), 518, 24, 24)
+        If keyP IsNot Nothing Then g.DrawImage(keyP, CInt(LOGICAL_WIDTH / 2 + 130), 518, 24, 24)
+        DrawCenteredText(g, "ARROW KEYS to move  |  F speed boost  |  P pause", _fnt11r, Color.FromArgb(150, 150, 170), 522)
+
+        ' ── Status / footer block ──────────────────────────────────────────
+        DrawCenteredText(g, $"Music: {_musicStyleNames(_musicStyle)}  |  SFX: {_sfxStyleNames(_sfxStyle)}", _fnt11r, Color.FromArgb(120, 140, 180), 558)
+        DrawCenteredText(g, $"Window: {_windowScaleNames(_windowScale)}", _fnt11r, Color.FromArgb(120, 140, 180), 582)
+        DrawCenteredText(g, "Destroy bricks  " & ChrW(8226) & "  Catch power-ups  " & ChrW(8226) & "  Build combos!", _fnt11r, Color.FromArgb(150, 150, 170), 612)
+        DrawCenteredText(g, "BrickBlast: Velocity Market  |  v1.0.0", _fnt10r, Color.FromArgb(80, 90, 110), 638)
+        DrawCenteredText(g, "[F12] Export marketing assets  |  [C] Credits  |  [S] Store  |  [H] Settings", _fnt10r, Color.FromArgb(55, 70, 90), 658)
     End Sub
 
     Private Sub DrawGame(g As Graphics)
         DrawHUD(g)
         DrawBricks(g)
         DrawPaddle(g)
+        If _showTrajectory Then DrawTrajectory(g)
         DrawBalls(g)
         DrawPowerUps(g)
         DrawParticles(g)
         DrawCombo(g)
+        DrawStreakCallout(g)
         DrawGetReady(g)
+    End Sub
+
+    ' ── Feature 2: Trajectory Indicator ──────────────────────────────────────
+    Private Sub DrawTrajectory(g As Graphics)
+        If _balls.Count = 0 Then Return
+        Dim activeBalls = _balls.Where(Function(bl) bl.Active).ToList()
+        If activeBalls.Count = 0 Then Return
+        Dim tball = activeBalls(0)
+        Dim tx = tball.X, ty = tball.Y
+        Dim tdx = tball.DX, tdy = tball.DY
+        Dim sm As Single = If(_speedBoost, 2.0F, 1.0F)
+        Dim maxSteps As Integer = 120
+        Dim dotSpacing As Integer = 8
+        Dim dotCount As Integer = 0
+        Dim stepIdx As Integer = 0
+        Do While stepIdx < maxSteps
+            tx += tdx * sm
+            ty += tdy * sm
+            If tx - _ballRadius <= 0 Then tx = _ballRadius : tdx = Math.Abs(tdx)
+            If tx + _ballRadius >= LOGICAL_WIDTH Then tx = LOGICAL_WIDTH - _ballRadius : tdx = -Math.Abs(tdx)
+            If ty - _ballRadius <= 0 Then ty = _ballRadius : tdy = Math.Abs(tdy)
+            If ty > LOGICAL_HEIGHT Then Exit Do
+            If stepIdx Mod dotSpacing = 0 Then
+                dotCount += 1
+                Dim alpha = CInt(160 * (1.0F - dotCount / CSng(maxSteps / dotSpacing)))
+                alpha = Math.Max(10, Math.Min(160, alpha))
+                Dim dotR As Single = Math.Max(2, _ballRadius / 3)
+                Using dotBr As New SolidBrush(Color.FromArgb(alpha, 200, 220, 255))
+                    g.FillEllipse(dotBr, CSng(tx - dotR), CSng(ty - dotR), dotR * 2, dotR * 2)
+                End Using
+            End If
+            ' Check brick collision — stop trace at first destructible brick hit
+            For Each bk In _bricks
+                If Not bk.Alive OrElse bk.IsIndestructible Then Continue For
+                Dim tcx = Math.Max(bk.Rect.Left, Math.Min(tx, bk.Rect.Right))
+                Dim tcy = Math.Max(bk.Rect.Top, Math.Min(ty, bk.Rect.Bottom))
+                If (tx - tcx) * (tx - tcx) + (ty - tcy) * (ty - tcy) <= CSng(_ballRadius * _ballRadius) Then
+                    Using pen As New Pen(Color.FromArgb(120, 255, 220, 60), 2)
+                        Using rr = RoundedRect(bk.Rect, 4)
+                            g.DrawPath(pen, rr)
+                        End Using
+                    End Using
+                    Exit Do
+                End If
+            Next
+            Dim paddleRect As New RectangleF(_paddleX, LOGICAL_HEIGHT - PADDLE_Y_OFFSET - PADDLE_HEIGHT, _paddleWidth, PADDLE_HEIGHT)
+            Dim tpcx = Math.Max(paddleRect.Left, Math.Min(tx, paddleRect.Right))
+            Dim tpcy = Math.Max(paddleRect.Top, Math.Min(ty, paddleRect.Bottom))
+            If (tx - tpcx) * (tx - tpcx) + (ty - tpcy) * (ty - tpcy) <= CSng(_ballRadius * _ballRadius) Then Exit Do
+            stepIdx += 1
+        Loop
+    End Sub
+
+    ' ── Feature 5: Streak callout text renderer ───────────────────────────────
+    Private Sub DrawStreakCallout(g As Graphics)
+        If _streakCalloutTimer <= 0 OrElse String.IsNullOrEmpty(_streakCallout) Then Return
+        Dim alpha = Math.Min(255, _streakCalloutTimer * 4)
+        Dim scale = If(_streakCalloutTimer > 55, 1.0F + (_streakCalloutTimer - 55) * 0.012F, 1.0F)
+        Dim baseY = CSng(LOGICAL_HEIGHT / 2 - 80)
+        Using fnt As New Font("Segoe UI", CSng(22 * scale), FontStyle.Bold)
+            Dim sz = g.MeasureString(_streakCallout, fnt)
+            Dim cx = (LOGICAL_WIDTH - sz.Width) / 2
+            Using br As New SolidBrush(Color.FromArgb(Math.Min(180, alpha), 0, 0, 10))
+                Using rr = RoundedRect(New RectangleF(cx - 16, baseY - 6, sz.Width + 32, sz.Height + 12), 10)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            Using br As New SolidBrush(Color.FromArgb(Math.Min(80, alpha \ 3), 255, 160, 0))
+                g.DrawString(_streakCallout, fnt, br, cx - 2, baseY - 2)
+                g.DrawString(_streakCallout, fnt, br, cx + 2, baseY + 2)
+            End Using
+            Using br As New SolidBrush(Color.FromArgb(alpha, 255, 240, 80))
+                g.DrawString(_streakCallout, fnt, br, cx, baseY)
+            End Using
+        End Using
     End Sub
 
     Private Sub DrawHUD(g As Graphics)
@@ -3053,22 +3531,14 @@ Public Class Form1
         Using pen As New Pen(Color.FromArgb(40, 100, 180, 255), 1)
             g.DrawLine(pen, 0, 50, LOGICAL_WIDTH, 50)
         End Using
-
-        ' ── Sync status — bottom-right corner ───────────────────────────────
-        Dim syncLabel = GetSyncLabel()
-        Dim syncF = _fnt11r
-        Dim syncSz = g.MeasureString(syncLabel, syncF)
-        Dim syncColor = If(_syncStatus = "Synced", Color.FromArgb(80, 220, 80),
-                        If(_syncStatus = "Syncing", Color.FromArgb(255, 220, 60),
-                        If(_syncStatus = "Failed", Color.FromArgb(255, 80, 80),
-                        Color.FromArgb(140, 140, 140))))
-        DrawTextShadow(g, syncLabel, syncF, syncColor,
-                       CSng(LOGICAL_WIDTH - syncSz.Width - 8),
-                       CSng(LOGICAL_HEIGHT - syncSz.Height - 6))
+        ' Sync status is intentionally NOT drawn in-game — it is shown on the
+        ' Menu (small pill, top-right) and on the Options screen (full label).
     End Sub
 
     Private Sub DrawBricks(g As Graphics)
         Dim useSprites = (_activeBrickPalette = "base")
+        ' Read active palette once per frame so equipping a skin takes effect immediately
+        Dim livePalette As Color()() = If(useSprites, Nothing, GetBrickPalette())
         For Each bk In _bricks
             If Not bk.Alive Then Continue For
             Dim r = bk.Rect
@@ -3082,7 +3552,14 @@ Public Class Form1
             If brickSpr IsNot Nothing Then
                 g.DrawImage(brickSpr, r)
             Else
-                Using br As New LinearGradientBrush(r, bk.Color1, bk.Color2, LinearGradientMode.Vertical)
+                ' Use live palette colours so equipping mid-session shows immediately;
+                ' damaged bricks and indestructible steel bricks keep their stored colour.
+                Dim dc1 = bk.Color1, dc2 = bk.Color2
+                If livePalette IsNot Nothing AndAlso Not isDamaged AndAlso Not bk.IsIndestructible Then
+                    Dim pi = bk.Row Mod livePalette.Length
+                    dc1 = livePalette(pi)(0) : dc2 = livePalette(pi)(1)
+                End If
+                Using br As New LinearGradientBrush(r, dc1, dc2, LinearGradientMode.Vertical)
                     Using rr = RoundedRect(r, 4)
                         g.FillPath(br, rr)
                     End Using
@@ -3116,17 +3593,45 @@ Public Class Form1
     Private Sub DrawPaddle(g As Graphics)
         Dim py = LOGICAL_HEIGHT - PADDLE_Y_OFFSET - PADDLE_HEIGHT
         Dim pr As New RectangleF(_paddleX, py, _paddleWidth, PADDLE_HEIGHT)
-        Dim paddleC1 = If(_colorblindMode, Color.FromArgb(240, 228, 66), Color.FromArgb(80, 180, 255))
-        Dim paddleC2 = If(_colorblindMode, Color.FromArgb(200, 190, 40), Color.FromArgb(40, 100, 200))
+
+        ' Determine paddle colors from active skin
+        Dim paddleC1 As Color, paddleC2 As Color
+        If _colorblindMode Then
+            paddleC1 = Color.FromArgb(240, 228, 66)
+            paddleC2 = Color.FromArgb(200, 190, 40)
+        Else
+            Select Case _activePaddleSkin
+                Case "fire"
+                    paddleC1 = Color.FromArgb(255, 180, 40) : paddleC2 = Color.FromArgb(200, 60, 0)
+                Case "ice"
+                    paddleC1 = Color.FromArgb(180, 240, 255) : paddleC2 = Color.FromArgb(40, 140, 220)
+                Case "gold"
+                    paddleC1 = Color.FromArgb(255, 240, 80) : paddleC2 = Color.FromArgb(200, 150, 0)
+                Case "neon"
+                    paddleC1 = Color.FromArgb(0, 255, 240) : paddleC2 = Color.FromArgb(0, 160, 200)
+                Case "shadow"
+                    paddleC1 = Color.FromArgb(100, 60, 160) : paddleC2 = Color.FromArgb(20, 0, 50)
+                Case "rainbow"
+                    Dim hue = (_frameCount * 2) Mod 360
+                    paddleC1 = ColorFromHSV(hue, 0.8, 1.0) : paddleC2 = ColorFromHSV((hue + 120) Mod 360, 1.0, 0.7)
+                Case "sakura"
+                    paddleC1 = Color.FromArgb(255, 200, 220) : paddleC2 = Color.FromArgb(220, 100, 150)
+                Case Else ' base
+                    paddleC1 = Color.FromArgb(80, 180, 255) : paddleC2 = Color.FromArgb(40, 100, 200)
+            End Select
+        End If
+
         Using br As New SolidBrush(Color.FromArgb(30, paddleC1))
             g.FillEllipse(br, _paddleX - 10, py + 5, _paddleWidth + 20, 20)
         End Using
         Dim paddleSpr As Bitmap = Nothing
-        If _paddleWidth > PADDLE_WIDTH Then
-            paddleSpr = TryGetSprite("sprites/paddle_wide")
-        Else
-            paddleSpr = TryGetSprite("sprites/paddle_hd_blue")
-            If paddleSpr Is Nothing Then paddleSpr = TryGetSprite("sprites/paddle")
+        If _activePaddleSkin = "base" AndAlso Not _colorblindMode Then
+            If _paddleWidth > PADDLE_WIDTH Then
+                paddleSpr = TryGetSprite("sprites/paddle_wide")
+            Else
+                paddleSpr = TryGetSprite("sprites/paddle_hd_blue")
+                If paddleSpr Is Nothing Then paddleSpr = TryGetSprite("sprites/paddle")
+            End If
         End If
         If paddleSpr IsNot Nothing Then
             g.DrawImage(paddleSpr, pr)
@@ -4914,9 +5419,9 @@ Public Class Form1
         End Using
 
         ' ── Category tabs ───────────────────────────────────────────────────────
-        Dim categories() As StoreCategory = {StoreCategory.Balls, StoreCategory.Bricks, StoreCategory.Bonuses}
-        Dim catLabels() As String = {ChrW(&H25CF) & " BALLS", ChrW(&H25A0) & " BRICKS", ChrW(&H25C6) & " BONUSES"}
-        Const TAB_COUNT As Integer = 3
+        Dim categories() As StoreCategory = {StoreCategory.Balls, StoreCategory.Bricks, StoreCategory.Bonuses, StoreCategory.Paddles}
+        Dim catLabels() As String = {ChrW(&H25CF) & " BALLS", ChrW(&H25A0) & " BRICKS", ChrW(&H25C6) & " BONUSES", ChrW(&H25AC) & " PADDLES"}
+        Const TAB_COUNT As Integer = 4
         Dim totalTabW = CInt(innerW * 0.88)   ' tabs span 88% of inner width
         Dim tabW = (totalTabW - (TAB_COUNT - 1) * 8) \ TAB_COUNT
         Dim tabsLeft = CSng(innerX + (innerW - totalTabW) / 2)
@@ -4977,7 +5482,8 @@ Public Class Form1
                 Dim owned = IsOwned(item.Category, item.Id)
                 Dim equipped = (item.Category = StoreCategory.Balls AndAlso _activeBallSkin = item.Id) OrElse
                                (item.Category = StoreCategory.Bricks AndAlso _activeBrickPalette = item.Id) OrElse
-                               (item.Category = StoreCategory.Bonuses AndAlso _activeBonusPack = item.Id)
+                               (item.Category = StoreCategory.Bonuses AndAlso _activeBonusPack = item.Id) OrElse
+                               (item.Category = StoreCategory.Paddles AndAlso _activePaddleSkin = item.Id)
                 Dim isSelected = (_storeSelectedIndex = itemIdx)
 
                 Dim cx = CSng(innerX + col * (cardW + COL_GAP))
@@ -5074,6 +5580,22 @@ Public Class Form1
                                          CSng(pvCy - iconSz.Height / 2))
                         End Using
                         iconFont.Dispose()
+
+                    Case StoreCategory.Paddles
+                        Dim pCols = GetBallPreviewColors(item.Id)  ' reuse ball color helper — same Id scheme
+                        Dim ppW = CSng(ICON_SZ - 10)
+                        Dim ppH = CSng(ICON_SZ * 0.22F)
+                        Dim ppX = pvX + 5
+                        Dim ppY = pvY + (ICON_SZ - ppH) / 2
+                        Using grd As New Drawing2D.LinearGradientBrush(
+                                New PointF(ppX, ppY), New PointF(ppX, ppY + ppH), pCols(0), pCols(1))
+                            Using rr2 = RoundedRect(New RectangleF(ppX, ppY, ppW, ppH), 5)
+                                g.FillPath(grd, rr2)
+                            End Using
+                        End Using
+                        Using br As New SolidBrush(Color.FromArgb(80, 255, 255, 255))
+                            g.FillRectangle(br, ppX + 4, CSng(ppY + 1), ppW - 8, ppH * 0.4F)
+                        End Using
                 End Select
 
                 ' ── Text area ─────────────────────────────────────────────────
@@ -5209,6 +5731,217 @@ Public Class Form1
         End Using
     End Sub
 
+
+        ' ── Feature 6: Player Stats Screen ──────────────────────────────────────
+        Private Sub DrawStats(g As Graphics)
+            DrawStarField(g)
+            Using br As New SolidBrush(Color.FromArgb(210, 0, 0, 20))
+                g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+            End Using
+            Dim pw = 600, ph = 500
+            Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+            Using br As New SolidBrush(Color.FromArgb(248, 10, 10, 32))
+                Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            Using pen As New Pen(Color.FromArgb(140, 100, 180, 255), 2)
+                Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                    g.DrawPath(pen, rr)
+                End Using
+            End Using
+            DrawCenteredText(g, ChrW(&H2605) & "  PLAYER STATS  " & ChrW(&H2605), _fnt22b, Color.FromArgb(255, 220, 60), py + 18)
+            DrawCenteredText(g, _playerName, _fnt16r, Color.FromArgb(160, 200, 255), py + 56)
+
+            Dim lx = px + 60
+            Dim y = py + 100
+            Dim vx = px + pw - 60
+
+            Dim rows() As (Label As String, Value As String, Clr As Color) = {
+                ("Bricks Destroyed", $"{_statBricksDestroyed:N0}", Color.FromArgb(255, 160, 80)),
+                ("Best Combo", $"x{_statBestCombo}", Color.FromArgb(255, 220, 60)),
+                ("Total Coins Earned", $"{_statTotalCoinsEarned:N0} " & ChrW(&H25C6), Color.FromArgb(80, 220, 180)),
+                ("Levels Completed", $"{_statLevelsCompleted}", Color.FromArgb(100, 180, 255)),
+                ("Daily Best Score", $"{_dailyBestScore:N0}", Color.FromArgb(255, 140, 200)),
+                ("Endless Best Score", $"{_endlessBestScore:N0}", Color.FromArgb(180, 120, 255)),
+                ("Coin Balance", $"{_coinBalance:N0} " & ChrW(&H25C6), Color.FromArgb(255, 200, 40)),
+                ("Play Time", FormatPlaytime(_statPlaytimeSeconds), Color.FromArgb(160, 220, 160))
+            }
+
+            Using fLabel As New Font("Segoe UI", 13, FontStyle.Regular)
+                Using fValue As New Font("Segoe UI", 14, FontStyle.Bold)
+                    For Each row In rows
+                        Using pen As New Pen(Color.FromArgb(25, 200, 200, 255), 1)
+                            g.DrawLine(pen, lx, y + 26, CSng(px + pw - 60), y + 26)
+                        End Using
+                        Using brL As New SolidBrush(Color.FromArgb(170, 185, 210))
+                            g.DrawString(row.Label, fLabel, brL, lx, y)
+                        End Using
+                        Using brV As New SolidBrush(row.Clr)
+                            Dim vsz = g.MeasureString(row.Value, fValue)
+                            g.DrawString(row.Value, fValue, brV, CSng(vx - vsz.Width), y)
+                        End Using
+                        y += 42
+                    Next
+                End Using
+            End Using
+
+            DrawCenteredText(g, "ESC — Back to Menu", _fnt11r, Color.FromArgb(100, 110, 140), py + ph - 28)
+        End Sub
+
+        Private Function FormatPlaytime(seconds As Integer) As String
+            Dim h = seconds \ 3600
+            Dim m = (seconds Mod 3600) \ 60
+            Dim s = seconds Mod 60
+            If h > 0 Then Return $"{h}h {m}m {s}s"
+            If m > 0 Then Return $"{m}m {s}s"
+            Return $"{s}s"
+        End Function
+
+        ' ── Feature 3: Power-Up Roulette Overlay ─────────────────────────────────
+        Private Sub DrawPowerUpRoulette(g As Graphics)
+            Using br As New SolidBrush(Color.FromArgb(200, 0, 0, 15))
+                g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+            End Using
+            Dim pw = 560, ph = 280
+            Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+            Using br As New SolidBrush(Color.FromArgb(250, 10, 10, 32))
+                Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 16)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            Using pen As New Pen(Color.FromArgb(200, 255, 200, 50), 2.5F)
+                Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 16)
+                    g.DrawPath(pen, rr)
+                End Using
+            End Using
+
+            DrawCenteredText(g, ChrW(&H25C6) & " STREAK REWARD — SPIN! " & ChrW(&H25C6), _fnt18b, Color.FromArgb(255, 220, 60), py + 14)
+
+            ' Three slot cells
+            Dim slotW = 120, slotH = 120, slotGap = 20
+            Dim totalSlotW = slotW * 3 + slotGap * 2
+            Dim slotStartX = CSng((LOGICAL_WIDTH - totalSlotW) / 2)
+            Dim slotY = CSng(py + 60)
+
+            For s = 0 To 2
+                Dim sx = slotStartX + s * (slotW + slotGap)
+                Dim isMid = (s = 1)
+                Dim cellClr = If(isMid AndAlso _rouletteConfirmed,
+                    Color.FromArgb(80, 255, 200, 50),
+                    Color.FromArgb(40, 180, 180, 255))
+                Using br As New SolidBrush(cellClr)
+                    Using rr = RoundedRect(New RectangleF(sx, slotY, slotW, slotH), 10)
+                        g.FillPath(br, rr)
+                    End Using
+                End Using
+                Using pen As New Pen(If(isMid, Color.FromArgb(220, 255, 200, 60), Color.FromArgb(100, 160, 160, 255)), If(isMid, 2.5F, 1.5F))
+                    Using rr = RoundedRect(New RectangleF(sx, slotY, slotW, slotH), 10)
+                        g.DrawPath(pen, rr)
+                    End Using
+                End Using
+                ' Draw the power-up icon
+                Dim pType = _rouletteSlots(s)
+                Dim pColor = GetBonusPackColor(pType)
+                Dim darkC = Color.FromArgb(160, Math.Max(0, pColor.R - 60), Math.Max(0, pColor.G - 60), Math.Max(0, pColor.B - 60))
+                DrawBonusBody(g, sx + slotW / 2, slotY + slotH / 2, CSng(POWERUP_SIZE), pColor, darkC)
+                DrawPowerUpIcon(g, pType, sx + slotW / 2, slotY + slotH / 2, POWERUP_SIZE * 0.36F, pColor)
+            Next
+
+            ' Pointer triangle above middle slot
+            Dim midX = slotStartX + slotW + slotGap + slotW / 2
+            Dim triPts() As PointF = {
+                New PointF(midX, slotY - 6),
+                New PointF(midX - 12, slotY - 22),
+                New PointF(midX + 12, slotY - 22)
+            }
+            Using br As New SolidBrush(Color.FromArgb(220, 255, 220, 60))
+                g.FillPolygon(br, triPts)
+            End Using
+
+            If _rouletteConfirmed Then
+                Dim puName = GetPowerUpName(_rouletteResult)
+                DrawCenteredText(g, $"You got: {puName}!", _fnt16r, Color.FromArgb(100, 255, 150), py + ph - 52)
+                Dim countdown = Math.Ceiling(_rouletteCountdown / 60.0)
+                DrawCenteredText(g, $"Applying in {countdown:0}s...", _fnt12r, Color.FromArgb(180, 180, 210), py + ph - 28)
+            ElseIf _rouletteSpinFrames > 0 Then
+                DrawCenteredText(g, "Spinning...", _fnt14r, Color.FromArgb(200, 200, 220), py + ph - 40)
+            End If
+        End Sub
+
+        Private Function GetPowerUpName(pType As PowerUpType) As String
+            Select Case pType
+                Case PowerUpType.BlueBallGrow    : Return "Ball Grow"
+                Case PowerUpType.RedBallShrink   : Return "+1 Life"
+                Case PowerUpType.GreenMultiBall  : Return "Multi-Ball"
+                Case PowerUpType.YellowBallShrink: Return "Ball Shrink"
+                Case PowerUpType.PurplePaddleMega: Return "Mega Paddle"
+                Case PowerUpType.OrangeBallSlow  : Return "Ball Slow"
+                Case PowerUpType.PinkBallFast    : Return "Ball Fast"
+                Case Else                        : Return "Power-Up"
+            End Select
+        End Function
+
+        ' ── Feature 1: Daily Challenge Entry Screen ───────────────────────────────
+        Private Sub DrawDailyChallengeMenu(g As Graphics)
+            DrawStarField(g)
+            Using br As New SolidBrush(Color.FromArgb(210, 0, 0, 20))
+                g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+            End Using
+            Dim pw = 560, ph = 400
+            Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+            Using br As New SolidBrush(Color.FromArgb(248, 10, 10, 32))
+                Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            Using pen As New Pen(Color.FromArgb(160, 255, 160, 60), 2)
+                Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                    g.DrawPath(pen, rr)
+                End Using
+            End Using
+
+            DrawCenteredText(g, ChrW(&H2600) & "  DAILY CHALLENGE  " & ChrW(&H2600), _fnt22b, Color.FromArgb(255, 200, 60), py + 18)
+
+            Dim today = DateTime.Now.ToString("MMMM d, yyyy")
+            DrawCenteredText(g, today, _fnt14r, Color.FromArgb(180, 200, 255), py + 60)
+
+            Dim seed = CInt(DateTime.Now.Date.Ticks Mod Integer.MaxValue)
+            DrawCenteredText(g, $"Seed: #{seed And &HFFFF}", _fnt11r, Color.FromArgb(100, 120, 160), py + 88)
+
+            ' Best score for today
+            Dim today2 = DateTime.Now.ToString("yyyy-MM-dd")
+            If _dailyLastDate = today2 AndAlso _dailyBestScore > 0 Then
+                DrawCenteredText(g, $"Today's Best: {_dailyBestScore:N0}", _fnt16r, Color.FromArgb(255, 220, 80), py + 120)
+            Else
+                DrawCenteredText(g, "No score yet today!", _fnt14r, Color.FromArgb(140, 155, 180), py + 120)
+            End If
+
+            DrawCenteredText(g, "Same brick layout for everyone, every day.", _fnt12r, Color.FromArgb(140, 160, 200), py + 160)
+            DrawCenteredText(g, "Score as high as you can in one run!", _fnt12r, Color.FromArgb(140, 160, 200), py + 184)
+
+            ' Start button area
+            Dim btnW = 200, btnH = 48
+            Dim bx = CSng((LOGICAL_WIDTH - btnW) / 2)
+            Dim by = CSng(py + 230)
+            Using br As New SolidBrush(Color.FromArgb(180, 255, 160, 40))
+                Using rr = RoundedRect(New RectangleF(bx, by, btnW, btnH), 10)
+                    g.FillPath(br, rr)
+                End Using
+            End Using
+            Using pen As New Pen(Color.FromArgb(220, 255, 200, 60), 2)
+                Using rr = RoundedRect(New RectangleF(bx, by, btnW, btnH), 10)
+                    g.DrawPath(pen, rr)
+                End Using
+            End Using
+            Using sf As New StringFormat With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
+                Using tbr As New SolidBrush(Color.FromArgb(20, 20, 20))
+                    g.DrawString(ChrW(&H25B6) & " START CHALLENGE", _fnt14b, tbr, New RectangleF(bx, by, btnW, btnH), sf)
+                End Using
+            End Using
+
+            DrawCenteredText(g, "SPACE to Start  |  ESC to go Back", _fnt11r, Color.FromArgb(100, 110, 140), py + ph - 36)
+        End Sub
 
         Private Sub DrawGameOverScreen(g As Graphics)
         ' Semi-transparent dark overlay over frozen game
@@ -5395,6 +6128,62 @@ Public Class Form1
                 Next
             End If
         End Using
+    End Sub
+
+    Private Sub DrawPauseMenu(g As Graphics)
+        Using br As New SolidBrush(Color.FromArgb(190, 0, 0, 20))
+            g.FillRectangle(br, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT)
+        End Using
+        Dim pw = 320, ph = 200
+        Dim px = CSng((LOGICAL_WIDTH - pw) / 2), py = CSng((LOGICAL_HEIGHT - ph) / 2)
+        Using br As New SolidBrush(Color.FromArgb(250, 12, 12, 38))
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(160, 100, 140, 255), 2)
+            Using rr = RoundedRect(New RectangleF(px, py, pw, ph), 14)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+        DrawCenteredText(g, "PAUSED", _fnt22b, Color.White, py + 16)
+        Dim btnW = 200, btnH = 44, gap = 16
+        Dim bx = CSng(px + (pw - btnW) / 2)
+        Dim by1 = CSng(py + 80)
+        Dim by2 = by1 + btnH + gap
+        ' Main Menu button
+        Using br As New SolidBrush(Color.FromArgb(200, 60, 80, 160))
+            Using rr = RoundedRect(New RectangleF(bx, by1, btnW, btnH), 8)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(160, 120, 160, 255), 1.5F)
+            Using rr = RoundedRect(New RectangleF(bx, by1, btnW, btnH), 8)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+        Using sf As New StringFormat With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
+            Using tbr As New SolidBrush(Color.White)
+                g.DrawString(ChrW(&H2190) & " Main Menu", _fnt14b, tbr, New RectangleF(bx, by1, btnW, btnH), sf)
+            End Using
+        End Using
+        ' Exit button
+        Using br As New SolidBrush(Color.FromArgb(200, 140, 40, 40))
+            Using rr = RoundedRect(New RectangleF(bx, by2, btnW, btnH), 8)
+                g.FillPath(br, rr)
+            End Using
+        End Using
+        Using pen As New Pen(Color.FromArgb(160, 220, 80, 80), 1.5F)
+            Using rr = RoundedRect(New RectangleF(bx, by2, btnW, btnH), 8)
+                g.DrawPath(pen, rr)
+            End Using
+        End Using
+        Using sf As New StringFormat With {.Alignment = StringAlignment.Center, .LineAlignment = StringAlignment.Center}
+            Using tbr As New SolidBrush(Color.White)
+                g.DrawString(ChrW(&H2715) & " Exit Game", _fnt14b, tbr, New RectangleF(bx, by2, btnW, btnH), sf)
+            End Using
+        End Using
+        DrawCenteredText(g, "ESC / P  —  Resume", _fnt10r, Color.FromArgb(120, 130, 155), by2 + btnH + 8)
     End Sub
 
     Private Sub DrawOverlay(g As Graphics, title As String, subtitle As String, Optional animated As Boolean = False)
