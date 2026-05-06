@@ -3068,13 +3068,17 @@ Public Class Form1
     End Sub
 
     Private Sub DrawBricks(g As Graphics)
+        Dim useSprites = (_activeBrickPalette = "base")
         For Each bk In _bricks
             If Not bk.Alive Then Continue For
             Dim r = bk.Rect
             Dim isDamaged = bk.Color1.R >= 195 AndAlso bk.Color1.G >= 195 AndAlso bk.Color1.B >= 195
-            Dim sprKey = If(isDamaged, $"sprites/brick_{bk.Row Mod 7}_damaged", If(bk.HitsLeft >= 3, "sprites/brick_gold", $"sprites/brick_{bk.Row Mod 7}"))
-            Dim brickSpr = TryGetSprite(sprKey)
-            If brickSpr Is Nothing AndAlso bk.HitsLeft >= 3 Then brickSpr = TryGetSprite($"sprites/brick_{bk.Row Mod 7}")
+            Dim brickSpr As Bitmap = Nothing
+            If useSprites Then
+                Dim sprKey = If(isDamaged, $"sprites/brick_{bk.Row Mod 7}_damaged", If(bk.HitsLeft >= 3, "sprites/brick_gold", $"sprites/brick_{bk.Row Mod 7}"))
+                brickSpr = TryGetSprite(sprKey)
+                If brickSpr Is Nothing AndAlso bk.HitsLeft >= 3 Then brickSpr = TryGetSprite($"sprites/brick_{bk.Row Mod 7}")
+            End If
             If brickSpr IsNot Nothing Then
                 g.DrawImage(brickSpr, r)
             Else
