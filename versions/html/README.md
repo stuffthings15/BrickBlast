@@ -27,8 +27,9 @@ This folder is fully self-contained. Zip it and share — works on any device wi
 | P / ESC | Pause |
 | F | Speed boost (2x) |
 | H / O | Options menu |
+| S | Open Store (from menu) |
 | Touch drag | Move paddle (mobile) |
-| Gamepad | Full controller support |
+| Gamepad | Full controller support (A=confirm, B=back, Start=options) |
 
 ## Platform
 - **Type:** Single-file HTML5/Canvas/JavaScript

@@ -312,7 +312,7 @@ function setupLevel(){
 
 function startGame(){
  score=0;lives=MAX_LIVES;level=1;combo=0;comboTimer=0;pendingHS=false;hsDelay=0;
- paddleW=PADDLE_W;paddleWTimer=0;ballRadius=BALL_R;speedBoost=false;
+ paddleW=PADDLE_W;paddleWTimer=0;ballRadius=BALL_R;speedBoost=false;sessionCoins=0;
  nameInput='';hsSaved=false;getReadyFrames=0;setupLevel();state=States.Playing;
  playSFX(sfxData[sfxStyle][10],100);
 }
