@@ -13,6 +13,28 @@ Imports System.Text
 Imports System.Text.Json
 Imports System.Threading.Tasks
 
+' ── JSON-serializable save record for the economy ──────────────────────────────
+Public Class StoreSaveData
+    Public Property PlayerName As String
+    Public Property CoinBalance As Integer
+    Public Property OwnedItems As List(Of String)
+    Public Property ActiveBallSkin As String
+    Public Property ActiveBrickPalette As String
+    Public Property ActiveBonusPack As String
+    Public Property ActivePaddleSkin As String
+    Public Property TotalBricksDestroyed As Integer
+    Public Property TotalPlaytimeSeconds As Integer
+    Public Property BestCombo As Integer
+    Public Property TotalCoinsEarned As Integer
+    Public Property LevelsCompleted As Integer
+    Public Property DailyBestScore As Integer
+    Public Property DailyLastDate As String
+    Public Property EndlessBestScore As Integer
+    Public Sub New()
+        OwnedItems = New List(Of String)
+    End Sub
+End Class
+
 Public Class Form1
 
 #Region "Win32 Sound API"
@@ -248,7 +270,7 @@ Public Class Form1
     Private _starFieldSpeed() As Single
     Private _starFieldBright() As Integer
 
-    Private _sfxVolume As Integer = 56
+    Private _sfxVolume As Integer = 20
     Private _musicVolume As Integer = 100
     Private _musicSpeed As Integer = 75
     Private _colorblindMode As Boolean = False
@@ -325,6 +347,7 @@ Public Class Form1
     Private _activeBallSkin As String = "base"
     Private _activeBrickPalette As String = "base"
     Private _activeBonusPack As String = "base"
+    Private _activePaddleSkin As String = "base"
 
     ' Coin earn rates (per brick broken, scaled by combo)
     Private Const COIN_PER_BRICK As Integer = 3
@@ -379,6 +402,7 @@ Public Class Form1
 
     ' ── Feature 2: Trajectory Indicator ──────────────────────────────────
     Private _showTrajectory As Boolean = True   ' T key toggles; on by default
+    Private _draggingSlider As Integer = -1     ' index of Options slider being dragged (-1 = none)
 
     ' ── Feature 3: Power-Up Roulette ─────────────────────────────────────
     Private _rouletteActive As Boolean = False
@@ -406,9 +430,6 @@ Public Class Form1
 
     ' ── Feature 7: Wave Bricks ───────────────────────────────────────────
     Private _waveTick As Single = 0.0F           ' incremented each frame
-
-    ' ── Feature 8: Paddle Skins ──────────────────────────────────────────
-    Private _activePaddleSkin As String = "base"
 
     ' ── Feature 9: Multi-Ball Streak Meter ───────────────────────────────
     Private _streakMeter As Integer = 0          ' bricks in current rally without losing ball
@@ -622,7 +643,7 @@ Public Class Form1
                 Case Keys.Down
                     _settingsSelection = (_settingsSelection + 1) Mod 7
                 Case Keys.Left
-                    If _settingsSelection = 0 Then _sfxVolume = Math.Max(0, _sfxVolume - 5) : UpdateMusicVolume()
+                    If _settingsSelection = 0 Then _sfxVolume = Math.Max(0, _sfxVolume - 5) : PlaySFX(880, 60)
                     If _settingsSelection = 1 Then _musicVolume = Math.Max(0, _musicVolume - 5) : UpdateMusicVolume()
                     If _settingsSelection = 2 Then
                         _musicSpeed = Math.Max(10, _musicSpeed - 5)
@@ -639,7 +660,7 @@ Public Class Form1
                         ApplyWindowScale()
                     End If
                 Case Keys.Right
-                    If _settingsSelection = 0 Then _sfxVolume = Math.Min(100, _sfxVolume + 5) : UpdateMusicVolume()
+                    If _settingsSelection = 0 Then _sfxVolume = Math.Min(100, _sfxVolume + 5) : PlaySFX(880, 60)
                     If _settingsSelection = 1 Then _musicVolume = Math.Min(100, _musicVolume + 5) : UpdateMusicVolume()
                     If _settingsSelection = 2 Then
                         _musicSpeed = Math.Min(200, _musicSpeed + 5)
@@ -724,7 +745,9 @@ Public Class Form1
                     _state = GameState.Playing
                 End If
             Case Keys.Escape
-                If _state = GameState.Playing OrElse _state = GameState.Paused Then
+                If _state = GameState.Playing Then
+                    _state = GameState.Paused
+                ElseIf _state = GameState.Paused Then
                     _state = GameState.PauseMenu
                 ElseIf _state = GameState.PauseMenu Then
                     _state = GameState.Playing
@@ -792,6 +815,12 @@ Public Class Form1
     End Sub
 
     Private Sub Form1_MouseMove(sender As Object, e As MouseEventArgs) Handles MyBase.MouseMove
+        ' Drag an options slider if one is active
+        If _draggingSlider >= 0 AndAlso e.Button <> MouseButtons.None Then
+            Dim lmx = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
+            ApplySliderDrag(_draggingSlider, lmx)
+            Return
+        End If
         If _state = GameState.Playing AndAlso e.Button <> MouseButtons.None Then
             _touchActive = True
             _touchX = CSng(e.X) * LOGICAL_WIDTH / ClientSize.Width
@@ -799,6 +828,14 @@ Public Class Form1
     End Sub
 
     Private Sub Form1_MouseUp(sender As Object, e As MouseEventArgs) Handles MyBase.MouseUp
+        If _draggingSlider >= 0 Then
+            ' Finalise music-speed change when the speed slider is released
+            If _draggingSlider = 2 Then
+                RegenerateCurrentMusicFile()
+                ChangeMusic()
+            End If
+            _draggingSlider = -1
+        End If
         _touchActive = False
     End Sub
 
@@ -1019,11 +1056,17 @@ Public Class Form1
         Dim py = CSng((LOGICAL_HEIGHT - ph) / 2)
         Dim settingsY = py + 373
         Dim barX = px + 260
+        Const BAR_W As Single = 200
         For idx = 0 To 6
             Dim itemY = settingsY + idx * 28
             If my >= itemY AndAlso my < itemY + 30 Then
                 _settingsSelection = idx
-                If mx >= barX Then
+                ' Rows 0-2 have a draggable bar; click anywhere on or left-of bar adjusts via L/R helper,
+                ' click within the bar region starts an exact drag.
+                If idx <= 2 AndAlso mx >= barX AndAlso mx <= barX + BAR_W Then
+                    _draggingSlider = idx
+                    ApplySliderDrag(idx, mx)
+                ElseIf mx >= barX Then
                     AdjustSettingRight(idx)
                 Else
                     AdjustSettingLeft(idx)
@@ -1035,7 +1078,7 @@ Public Class Form1
 
     Private Sub AdjustSettingLeft(idx As Integer)
         Select Case idx
-            Case 0 : _sfxVolume = Math.Max(0, _sfxVolume - 5) : UpdateMusicVolume()
+            Case 0 : _sfxVolume = Math.Max(0, _sfxVolume - 5) : PlaySFX(880, 60)
             Case 1 : _musicVolume = Math.Max(0, _musicVolume - 5) : UpdateMusicVolume()
             Case 2
                 _musicSpeed = Math.Max(10, _musicSpeed - 5)
@@ -1050,7 +1093,7 @@ Public Class Form1
 
     Private Sub AdjustSettingRight(idx As Integer)
         Select Case idx
-            Case 0 : _sfxVolume = Math.Min(100, _sfxVolume + 5) : UpdateMusicVolume()
+            Case 0 : _sfxVolume = Math.Min(100, _sfxVolume + 5) : PlaySFX(880, 60)
             Case 1 : _musicVolume = Math.Min(100, _musicVolume + 5) : UpdateMusicVolume()
             Case 2
                 _musicSpeed = Math.Min(200, _musicSpeed + 5)
@@ -1060,6 +1103,27 @@ Public Class Form1
             Case 4 : _sfxStyle = (_sfxStyle + 1) Mod 5
             Case 5 : _colorblindMode = Not _colorblindMode
             Case 6 : _windowScale = (_windowScale + 1) Mod _windowScaleSizes.Length : ApplyWindowScale()
+        End Select
+    End Sub
+
+    ' Sets the value for a slide-able settings row (0=SFX vol, 1=Music vol, 2=Music speed)
+    ' from an exact mouse X position, using the same bar geometry as DrawOptions.
+    Private Sub ApplySliderDrag(idx As Integer, mouseX As Single)
+        Const OPTS_BAR_X As Integer = 260   ' must match DrawOptions barX = px + 260
+        Const OPTS_BAR_W As Single = 200
+        Dim pw As Integer = 780
+        Dim px = CSng((LOGICAL_WIDTH - pw) / 2)
+        Dim barX = px + OPTS_BAR_X
+        Dim t = Math.Max(0.0F, Math.Min(1.0F, (mouseX - barX) / OPTS_BAR_W))
+        Select Case idx
+            Case 0
+                _sfxVolume = CInt(t * 100)
+                If _sfxVolume > 0 Then PlaySFX(880, 60)
+            Case 1
+                _musicVolume = CInt(t * 100)
+                UpdateMusicVolume()
+            Case 2
+                _musicSpeed = 10 + CInt(t * 190)   ' range 10–200
         End Select
     End Sub
 
@@ -1085,7 +1149,7 @@ Public Class Form1
                 DrawMenu(g)
             Case GameState.Playing, GameState.Paused, GameState.PauseMenu
                 DrawGame(g)
-                If _state = GameState.Paused Then DrawOverlay(g, "PAUSED", "Press SPACE to resume")
+                If _state = GameState.Paused Then DrawOverlay(g, "PAUSED", "SPACE resume  |  O options  |  ESC menu")
                 If _state = GameState.PauseMenu Then DrawPauseMenu(g)
             Case GameState.LevelComplete
                 DrawGame(g)
@@ -3371,7 +3435,9 @@ Public Class Form1
             Dim sy = 352.0F
             For i = 0 To topN - 1
                 Dim rec = _highScores(i)
-                Dim nm = If(rec.PlayerName.Length > 10, rec.PlayerName.Substring(0, 10), rec.PlayerName.PadRight(10))
+                Dim safeName = If(rec.PlayerName, "").Trim()
+                If safeName.Length = 0 Then safeName = "(Unknown)"
+                Dim nm = If(safeName.Length > 10, safeName.Substring(0, 10), safeName.PadRight(10))
                 DrawCenteredText(g, $"{i + 1}. {nm}  {rec.PlayerScore:N0}", _fnt10r, Color.FromArgb(200, 200, 225), sy)
                 sy += 20
             Next
@@ -6107,10 +6173,11 @@ Public Class Form1
             Else
                 For i = 0 To Math.Min(9, _highScores.Count - 1)
                     Dim rec = _highScores(i)
+                    Dim safeName = If(String.IsNullOrWhiteSpace(rec.PlayerName), "(Unknown)", rec.PlayerName)
                     Dim rank = (i + 1).ToString().PadLeft(2)
-                    Dim nm = If(rec.PlayerName.Length > 12, rec.PlayerName.Substring(0, 12), rec.PlayerName.PadRight(12))
+                    Dim nm = If(safeName.Length > 12, safeName.Substring(0, 12), safeName.PadRight(12))
                     Dim sc = rec.PlayerScore.ToString("N0").PadLeft(10)
-                    Dim ec = If(_highScoreSaved AndAlso rec.PlayerName = _nameInput AndAlso rec.PlayerScore = _score,
+                    Dim ec = If(_highScoreSaved AndAlso String.Equals(safeName, _nameInput, StringComparison.Ordinal) AndAlso rec.PlayerScore = _score,
                                 Color.FromArgb(255, 255, 120), Color.FromArgb(195, 195, 215))
                     If i = 0 Then
                         Dim goldSpr = TryGetSprite("ui/medal_gold")
@@ -6217,7 +6284,7 @@ Public Class Form1
                 DrawCenteredText(g, title, ft, titleColor, LOGICAL_HEIGHT / 2 - 60)
             End Using
         End If
-        Dim resumeSpr = If(subtitle.Contains("resume"), TryGetSprite("ui/text_resume"), Nothing)
+        Dim resumeSpr = If(Not subtitle.Contains("|") AndAlso subtitle.Contains("resume"), TryGetSprite("ui/text_resume"), Nothing)
         If resumeSpr IsNot Nothing Then
             g.DrawImage(resumeSpr, CInt((LOGICAL_WIDTH - 200) / 2), CInt(LOGICAL_HEIGHT / 2 + 8), 200, 36)
         Else
@@ -6244,24 +6311,28 @@ Public Class Form1
     Private Sub DrawVolumeBar(g As Graphics, x As Single, y As Single, w As Single, h As Single, value As Integer, barColor As Color)
         Dim trackSpr = TryGetSprite("ui/slider_track")
         Dim handleSpr = TryGetSprite("ui/slider_handle")
+        ' Dark empty track (always)
+        Using br As New SolidBrush(Color.FromArgb(120, 40, 40, 60))
+            Using rr = RoundedRect(New RectangleF(x, y + h * 0.25F, w, h * 0.5F), 3)
+                g.FillPath(br, rr)
+            End Using
+        End Using
         If trackSpr IsNot Nothing Then
-            g.DrawImage(trackSpr, x, y, w, h)
-        Else
-            Using br As New SolidBrush(Color.FromArgb(60, 255, 255, 255))
-                Using rr = RoundedRect(New RectangleF(x, y, w, h), 4)
+            ' Draw sprite at reduced opacity as decoration over dark track
+            Dim ia As New System.Drawing.Imaging.ImageAttributes()
+            Dim cm As New System.Drawing.Imaging.ColorMatrix()
+            cm.Matrix33 = 0.35F
+            ia.SetColorMatrix(cm)
+            g.DrawImage(trackSpr, New Rectangle(CInt(x), CInt(y + h * 0.25F), CInt(w), CInt(h * 0.5F)), 0, 0, trackSpr.Width, trackSpr.Height, GraphicsUnit.Pixel, ia)
+        End If
+        ' Filled portion scaled to value (always drawn on top)
+        Dim fw = CSng(w * Math.Max(0, Math.Min(100, value)) / 100.0)
+        If fw > 2 Then
+            Using br As New SolidBrush(Color.FromArgb(210, barColor.R, barColor.G, barColor.B))
+                Using rr = RoundedRect(New RectangleF(x, y + h * 0.25F, fw, h * 0.5F), 3)
                     g.FillPath(br, rr)
                 End Using
             End Using
-        End If
-        If trackSpr Is Nothing Then
-            Dim fw = CSng(w * value / 100.0)
-            If fw > 2 Then
-                Using br As New SolidBrush(Color.FromArgb(200, barColor.R, barColor.G, barColor.B))
-                    Using rr = RoundedRect(New RectangleF(x, y, fw, h), 4)
-                        g.FillPath(br, rr)
-                    End Using
-                End Using
-            End If
         End If
         If handleSpr IsNot Nothing Then
             Dim hx = x + CSng(w * Math.Max(0, Math.Min(100, value)) / 100.0) - h / 2
