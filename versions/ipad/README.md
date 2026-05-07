@@ -38,6 +38,21 @@ chmod +x BUILD_IOS.sh
 2. Open URL in **Safari** on iPad
 3. Tap **Share → Add to Home Screen**
 
+## Controls
+| Input | Action |
+|-------|--------|
+| Touch drag | Move paddle |
+| Tap | Start / Resume / Speed boost (2×) |
+| Two-finger tap | Pause |
+| Keyboard ← → / A D | Move paddle (when keyboard attached) |
+| Keyboard SPACE | Start / Resume |
+| Gamepad | Full controller support (MFi) |
+
+## Requirements
+- iPad with iPadOS 13.0 or later
+- Safari for PWA install (no App Store needed)
+- Mac + Xcode 15+ for native build
+
 ## App Details
 - **Bundle ID:** `com.teamfasttalk.brickblast`
 - **Orientation:** All orientations (landscape recommended)

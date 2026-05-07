@@ -38,6 +38,20 @@ chmod +x BUILD_IOS.sh
 2. Open URL in **Safari** on iPhone
 3. Tap **Share → Add to Home Screen**
 
+## Controls
+| Input | Action |
+|-------|--------|
+| Touch drag | Move paddle |
+| Tap | Start / Resume / Speed boost (2×) |
+| Two-finger tap | Pause |
+| Tilt (if enabled) | Move paddle |
+| Gamepad | Full controller support (MFi) |
+
+## Requirements
+- iPhone with iOS 13.0 or later
+- Safari for PWA install (no App Store needed)
+- Mac + Xcode 15+ for native build
+
 ## App Details
 - **Bundle ID:** `com.teamfasttalk.brickblast`
 - **Orientation:** Landscape only

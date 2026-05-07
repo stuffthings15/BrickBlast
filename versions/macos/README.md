@@ -1,34 +1,57 @@
-# Brick Blast — macOS Desktop Version
+# Brick Blast — macOS Desktop Version (Intel x64)
 
-Cross-platform desktop port using **Avalonia UI** (WPF-compatible DrawingContext API).
+This folder is fully self-contained. Zip it and share — works on any Intel Mac.
+
+## How to Run
+
+**Option A — Run directly**
+```bash
+chmod +x "anime finder macos"
+./"anime finder macos"
+```
+
+**Option B — Double-click** the `anime finder macos` binary in Finder.
+
+> **First run:** macOS may show a security prompt.
+> Go to **System Settings → Privacy & Security → Open Anyway** to allow it.
+
+## Contents
+| File | Purpose |
+|------|---------|
+| `anime finder macos` | Native macOS executable (Intel x64) |
+| `anime finder macos.pdb` | Debug symbols (optional — can delete) |
+| `libAvaloniaNative.dylib` | Avalonia UI native renderer |
+| `libHarfBuzzSharp.dylib` | Text shaping library |
+| `libSkiaSharp.dylib` | 2D graphics library |
+| `RUN_MACOS.sh` | Launch script |
+| `README.md` | This file |
 
 ## Requirements
-- .NET 10 SDK — install via [dotnet.microsoft.com](https://dotnet.microsoft.com/download) or Homebrew:
-  ```bash
-  brew install --cask dotnet-sdk
-  ```
 - macOS 12 Monterey or later
-- Apple Silicon (arm64) or Intel (x64)
+- Intel (x64) Mac
+- No additional software needed — all runtimes are bundled
 
-## Build & Run
+## Controls
+| Input | Action |
+|-------|--------|
+| ← → / A D | Move paddle |
+| SPACE | Start / Resume / Speed boost (2×) |
+| P / ESC | Pause |
+| F | Speed boost (2×) |
+| H / O | Options menu |
+| Mouse click | Speed up ball (during gameplay) |
 
+## Platform
+- **Type:** Native macOS app (Avalonia UI + VB.NET)
+- **Architecture:** x64 (Intel only)
+- **Framework:** .NET 10 (self-contained)
+- **For Apple Silicon:** Use the `macos-arm64/` folder instead
+
+## Rebuild from Source
 ```bash
 cd "anime finder macos"
-dotnet restore
-dotnet run
-```
-
-## Publish standalone app bundle
-
-```bash
-# Apple Silicon M1/M2/M3
-dotnet publish -r osx-arm64 -c Release --self-contained true
-
-# Intel Mac
 dotnet publish -r osx-x64 -c Release --self-contained true
 ```
-
-Output lands in `bin/Release/net10.0/osx-arm64/publish/`.
 
 ## Link Assets (one-time setup)
 

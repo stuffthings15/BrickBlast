@@ -1,4 +1,38 @@
-# Brick Blast — Windows Store (Microsoft Store) Submission Guide
+# Brick Blast — Windows Store Version
+
+## Requirements
+- Windows 10 version 1903 or later (x64 or ARM64)
+- No additional software needed — MSIX is self-contained
+
+## Contents
+| File | Purpose |
+|------|---------|
+| `BrickBlast.msixbundle` | **Upload to Partner Center** — covers x64 + ARM64 |
+| `BrickBlast-x64.msix` | Standalone x64 (sideload / direct install) |
+| `BrickBlast-arm64.msix` | Standalone ARM64 (sideload / direct install) |
+| `BrickBlast.pfx` | Self-signed cert (dev/sideload only) |
+| `RUN_WINDOWS_STORE.bat` | Launcher / install helper |
+| `README.md` | This file |
+
+## Install (Sideload — No Store Needed)
+1. Double-click `BrickBlast.pfx` → install to **Local Machine → Trusted Root**
+2. Double-click `BrickBlast-x64.msix` (or `arm64` on ARM devices)
+3. Click **Install**
+
+## Controls
+| Input | Action |
+|-------|--------|
+| ← → / A D | Move paddle |
+| SPACE | Start / Resume / Speed boost (2×) |
+| P / ESC | Pause |
+| F | Speed boost (2×) |
+| H / O | Options menu |
+| Mouse click | Speed up ball (during gameplay) |
+| Gamepad | Full controller support |
+
+---
+
+## Microsoft Store Submission Guide
 
 ## Artifacts
 | File | Purpose |
