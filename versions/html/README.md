@@ -6,10 +6,14 @@
 This folder is fully self-contained. Zip it and share — works on any device with a browser.
 
 ## Contents
-- `index.html` — The complete game (single file)
-- `manifest.json` — PWA manifest for "Add to Home Screen" install
-- `RUN_HTML.bat` — Shortcut to open in browser
-- `README.md` — This file
+| File / Folder | Purpose |
+|---------------|---------|
+| `index.html` | The complete game (single file, HTML5 / Canvas / JavaScript) |
+| `manifest.json` | PWA manifest for "Add to Home Screen" install |
+| `icons/` | App icons for PWA install |
+| `assets/` | Game sprites, tiles, and UI images |
+| `RUN_HTML.bat` | Shortcut to open in browser (Windows) |
+| `README.md` | This file |
 
 ## Requirements
 - Any modern browser (Chrome, Firefox, Edge, Safari)
