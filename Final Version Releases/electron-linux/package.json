@@ -11,7 +11,7 @@
     "appId": "com.teamfasttalk.brickblast",
     "productName": "BrickBlast: Velocity Market",
     "linux": {
-      "target": [{ "target": "AppImage", "arch": ["x64", "arm64"] }],
+      "target": [{ "target": "zip", "arch": ["x64", "arm64"] }],
       "category": "Game"
     }
   },
