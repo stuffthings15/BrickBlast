@@ -1,11 +1,60 @@
 {
-  "name": "Brick Blast - Team Fast Talk",
-  "short_name": "Brick Blast",
+  "theme_color": "#000014",
+  "background_color": "#000014",
   "description": "2D Brick Breaker arcade game by Team Fast Talk",
   "start_url": "./index.html",
+  "icons": [
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-72.png",
+      "sizes": "72x72"
+    },
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-96.png",
+      "sizes": "96x96"
+    },
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-128.png",
+      "sizes": "128x128"
+    },
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-144.png",
+      "sizes": "144x144"
+    },
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-152.png",
+      "sizes": "152x152"
+    },
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-192.png",
+      "sizes": "192x192"
+    },
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-384.png",
+      "sizes": "384x384"
+    },
+    {
+      "purpose": "any maskable",
+      "type": "image/png",
+      "src": "icons/icon-512.png",
+      "sizes": "512x512"
+    }
+  ],
+  "short_name": "Brick Blast",
   "display": "fullscreen",
-  "orientation": "landscape",
-  "background_color": "#000014",
-  "theme_color": "#000014",
-  "icons": []
+  "name": "Brick Blast - Team Fast Talk",
+  "orientation": "landscape"
 }
