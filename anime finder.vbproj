@@ -41,6 +41,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="bin\store-pkg-x64\AppxManifest.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Update="My Project\Application.Designer.vb">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>

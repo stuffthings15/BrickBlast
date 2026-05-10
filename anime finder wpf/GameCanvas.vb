@@ -54,13 +54,38 @@ Public Class GameCanvas
 
 #Region "State and Structures"
         Private Enum GameState
+            NameEntry
             Menu
             Playing
             Paused
+            PauseMenu
             LevelComplete
+            GameOver
             Options
             HighScore
+            Store
+            Credits
+            Stats
+            DailyChallenge
+            PowerUpRoulette
+            Endless
         End Enum
+
+        Private Enum StoreCategory
+            Balls
+            Bricks
+            Bonuses
+            Paddles
+        End Enum
+
+        Private Structure StoreItem
+            Public Id As String
+            Public Name As String
+            Public Description As String
+            Public Price As Integer
+            Public Category As StoreCategory
+            Public IsBase As Boolean
+        End Structure
 
         Private Structure Ball
             Public X As Single, Y As Single, DX As Single, DY As Single, Speed As Single, Active As Boolean
@@ -137,6 +162,41 @@ Public Class GameCanvas
         Private _nameInput As String = ""
         Private _highScoreSaved As Boolean = False
         Private ReadOnly _highScorePath As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BrickBlast", "highscores.json")
+        Private ReadOnly _storePath As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BrickBlast", "store.json")
+        Private ReadOnly _statsPath As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BrickBlast", "stats.json")
+
+        ' ── Store / Economy ─────────────────────────────────────────────────
+        Private _storeItems As New List(Of StoreItem)
+        Private _coinBalance As Integer = 0
+        Private _ownedItems As New HashSet(Of String)
+        Private _equippedBall As String = "base"
+        Private _equippedBrickPalette As String = "default"
+        Private _activePaddleSkin As String = "base"
+        Private _storeCategory As StoreCategory = StoreCategory.Balls
+        Private _storeSelectedIndex As Integer = 0
+        Private _storeScrollOffset As Integer = 0
+
+        ' ── Player Profile / Name Entry ──────────────────────────────────────
+        Private _playerName As String = "Player"
+        Private _nameEntryInput As String = ""
+
+        ' ── Stats ───────────────────────────────────────────────────────────
+        Private _statBricksDestroyed As Integer = 0
+        Private _statPlaytimeSeconds As Integer = 0
+        Private _statPlaytimeFrames As Integer = 0
+        Private _statBestCombo As Integer = 0
+        Private _statTotalCoinsEarned As Integer = 0
+        Private _statLevelsCompleted As Integer = 0
+        Private _dailyBestScore As Integer = 0
+        Private _endlessBestScore As Integer = 0
+
+        ' ── Combo callout ────────────────────────────────────────────────────
+        Private _streakCallout As String = ""
+        Private _streakCalloutTimer As Integer = 0
+
+        ' ── PauseMenu ────────────────────────────────────────────────────────
+        Private _pauseMenuSelection As Integer = 0   ' 0=Resume 1=MainMenu 2=Exit
+
         Private _getReadyFrames As Integer = 0
         Private _gameTimer As DispatcherTimer
         Private _dpi As Double = 1.0
@@ -233,6 +293,9 @@ Public Class GameCanvas
             _dpi = VisualTreeHelper.GetDpi(Me).PixelsPerDip
             _state = GameState.Menu
             LoadHighScores()
+            LoadStore()
+            LoadStats()
+            InitStoreItems()
             PreGenerateAllMusic()
             _gameTimer = New DispatcherTimer()
             _gameTimer.Interval = TimeSpan.FromMilliseconds(16)
@@ -365,7 +428,7 @@ Public Class GameCanvas
                 Case GameState.Menu : DrawMenu(dc)
                 Case GameState.Playing, GameState.Paused
                     DrawGame(dc)
-                    If _state = GameState.Paused Then DrawOverlay(dc, "PAUSED", "Press SPACE to resume")
+                    If _state = GameState.Paused Then DrawOverlay(dc, "PAUSED", "SPACE resume  |  O options  |  ESC menu")
                 Case GameState.LevelComplete
                     DrawGame(dc)
                     DrawOverlay(dc, $"LEVEL {_level} COMPLETE!", "Press SPACE for next level", True)
@@ -373,6 +436,12 @@ Public Class GameCanvas
                     If _previousState = GameState.Playing OrElse _previousState = GameState.Paused Then DrawGame(dc)
                     DrawOptions(dc)
                 Case GameState.HighScore : DrawHighScore(dc)
+                Case GameState.GameOver : DrawGameOverScreen(dc)
+                Case GameState.PauseMenu : DrawGame(dc) : DrawPauseMenu(dc)
+                Case GameState.NameEntry : DrawNameEntry(dc)
+                Case GameState.Store : DrawStore(dc)
+                Case GameState.Credits : DrawCredits(dc)
+                Case GameState.Stats : DrawStats(dc)
             End Select
             If shook Then dc.Pop()
             dc.Pop()
@@ -963,16 +1032,13 @@ Public Class GameCanvas
         End Sub
 
         Private Sub DrawVolBar(dc As DrawingContext, x As Double, y As Double, w As Double, h As Double, value As Integer, col As Color)
-            Dim sliderTrack = If(_assetMgr IsNot Nothing, _assetMgr.GetSprite("UI/slider_track"), Nothing)
             Dim sliderHandle = If(_assetMgr IsNot Nothing, _assetMgr.GetSprite("UI/slider_handle"), Nothing)
-            If sliderTrack IsNot Nothing Then
-                dc.DrawImage(sliderTrack, New Rect(x, y + h / 4, w, h / 2))
-            Else
-                dc.DrawRoundedRectangle(SB(C4(60, 255, 255, 255)), Nothing, New Rect(x, y, w, h), 4, 4)
-            End If
             Dim fw = w * value / 100.0
+            ' Dark unfilled track
+            dc.DrawRoundedRectangle(SB(C4(120, 40, 40, 60)), New Pen(SB(C4(80, 180, 180, 200)), 1), New Rect(x, y + h / 4, w, h / 2), 3, 3)
+            ' Bright filled portion
             If fw > 2 Then
-                dc.DrawRoundedRectangle(SB(Color.FromArgb(120, col.R, col.G, col.B)), Nothing, New Rect(x, y + h / 4, fw, h / 2), 2, 2)
+                dc.DrawRoundedRectangle(New LinearGradientBrush(Color.FromArgb(220, col.R, col.G, col.B), Color.FromArgb(180, CByte(Math.Min(255, CInt(col.R) * 7 / 10)), CByte(Math.Min(255, CInt(col.G) * 7 / 10)), CByte(Math.Min(255, CInt(col.B) * 7 / 10))), 0.0), Nothing, New Rect(x, y + h / 4, fw, h / 2), 3, 3)
             End If
             If sliderHandle IsNot Nothing Then
                 dc.DrawImage(sliderHandle, New Rect(Math.Max(x, x + fw - h), y, h, h))
@@ -1106,6 +1172,169 @@ Public Class GameCanvas
             End If
             DrawCT(dc, subtitle, 16, C3(200, 200, 220), LOGICAL_HEIGHT / 2.0 + 10)
         End Sub
+
+        Private Sub DrawPauseMenu(dc As DrawingContext)
+            dc.DrawRectangle(SB(C4(210, 0, 0, 20)), Nothing, New Rect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            Dim pw = 460.0, ph = 300.0, px = (LOGICAL_WIDTH - pw) / 2, py = (LOGICAL_HEIGHT - ph) / 2
+            dc.DrawRoundedRectangle(SB(C4(245, 12, 12, 35)), New Pen(SB(C4(100, 80, 160, 255)), 2), New Rect(px, py, pw, ph), 14, 14)
+            If _textPaused IsNot Nothing Then
+                Dim tw = Math.Min(260.0, _textPaused.Width * 0.55), th = tw * _textPaused.Height / _textPaused.Width
+                dc.DrawImage(_textPaused, New Rect((LOGICAL_WIDTH - tw) / 2, py + 14, tw, th))
+            Else
+                DrawCT(dc, "PAUSED", 28, Colors.White, py + 18, True)
+            End If
+            Dim items() = {"► Resume", "Main Menu", "Exit Game"}
+            For i = 0 To 2
+                Dim iy = py + 100 + i * 56.0
+                Dim sel = (i = _pauseMenuSelection)
+                Dim bg = If(sel, C4(160, 80, 160, 255), C4(60, 40, 60, 180))
+                dc.DrawRoundedRectangle(SB(bg), Nothing, New Rect(px + 60, iy, pw - 120, 42), 8, 8)
+                Dim col = If(sel, C3(255, 240, 100), C3(200, 200, 220))
+                DrawCT(dc, items(i), 18, col, iy + 10, sel)
+            Next
+            DrawCT(dc, "↑↓ Navigate   Enter/Space = Select", 10, C3(120, 120, 150), py + ph - 28)
+        End Sub
+
+        Private Sub DrawNameEntry(dc As DrawingContext)
+            dc.DrawRectangle(SB(C4(230, 0, 0, 20)), Nothing, New Rect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            Dim pw = 500.0, ph = 260.0, px = (LOGICAL_WIDTH - pw) / 2, py = (LOGICAL_HEIGHT - ph) / 2
+            dc.DrawRoundedRectangle(SB(C4(245, 12, 12, 35)), New Pen(SB(C4(100, 80, 160, 255)), 2), New Rect(px, py, pw, ph), 14, 14)
+            DrawCT(dc, "ENTER YOUR NAME", 22, C3(100, 200, 255), py + 20, True)
+            DrawCT(dc, "This name will appear on the leaderboard.", 11, C3(150, 150, 180), py + 60)
+            Dim cursor = If(_frameCount Mod 60 < 30, "_", " ")
+            Dim box = _nameEntryInput & cursor
+            DrawCT(dc, box, 26, Colors.White, py + 100, True)
+            dc.DrawLine(New Pen(SB(C3(100, 200, 255)), 2), New Point(px + 40, py + 150), New Point(px + pw - 40, py + 150))
+            DrawCT(dc, "A-Z 0-9   Backspace = delete   Enter = confirm", 10, C3(120, 120, 150), py + 165)
+        End Sub
+
+        Private Sub DrawGameOverScreen(dc As DrawingContext)
+            DrawStarField(dc)
+            dc.DrawRectangle(SB(C4(200, 0, 0, 20)), Nothing, New Rect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            Dim pw = 520.0, ph = 360.0, px = (LOGICAL_WIDTH - pw) / 2, py = (LOGICAL_HEIGHT - ph) / 2
+            dc.DrawRoundedRectangle(SB(C4(245, 12, 12, 35)), New Pen(SB(C4(100, 255, 80, 80)), 2), New Rect(px, py, pw, ph), 14, 14)
+            If _textGameOver IsNot Nothing Then
+                Dim tw = Math.Min(300.0, _textGameOver.Width * 0.6), th = tw * _textGameOver.Height / _textGameOver.Width
+                dc.DrawImage(_textGameOver, New Rect((LOGICAL_WIDTH - tw) / 2, py + 10, tw, th))
+            Else
+                DrawCT(dc, "GAME OVER", 36, C3(255, 80, 100), py + 15, True)
+            End If
+            DrawCT(dc, $"Score: {_score}", 22, C3(255, 220, 100), py + 80, True)
+            DrawCT(dc, $"Level {_level}   Bricks: {_statBricksDestroyed}   Best Combo: x{_statBestCombo}", 12, C3(180, 200, 255), py + 128)
+            DrawCT(dc, $"Coins earned this game: +{_coinBalance}", 12, C3(255, 200, 80), py + 158)
+            Dim y2 = py + 195.0
+            If Not _highScoreSaved Then
+                DrawCT(dc, "Enter Name: " & _nameInput & If(_frameCount Mod 60 < 30, "_", " "), 14, Colors.White, y2)
+                DrawCT(dc, "Press ENTER to save", 10, C3(140, 140, 160), y2 + 28)
+            Else
+                DrawCT(dc, "Score saved!  Press SPACE for menu", 13, C3(100, 255, 150), y2)
+            End If
+            DrawCT(dc, $"High Score: {_highScore}", 12, C3(200, 200, 255), py + ph - 38)
+        End Sub
+
+        Private Sub DrawStore(dc As DrawingContext)
+            dc.DrawRectangle(SB(C4(230, 8, 8, 25)), Nothing, New Rect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            DrawCT(dc, "STORE", 30, C3(255, 200, 80), 18, True)
+            DrawCT(dc, $"Coins: {_coinBalance}", 14, C3(255, 220, 80), 56, True)
+            ' Category tabs
+            Dim cats() = {StoreCategory.Balls, StoreCategory.Bricks, StoreCategory.Bonuses, StoreCategory.Paddles}
+            Dim catNames() = {"Balls", "Bricks", "Bonuses", "Paddles"}
+            Dim tabW = 200.0, tabH = 34.0, tabY = 88.0, tabStartX = (LOGICAL_WIDTH - cats.Length * tabW) / 2.0
+            For i = 0 To cats.Length - 1
+                Dim tx = tabStartX + i * tabW
+                Dim sel = (cats(i) = _storeCategory)
+                dc.DrawRoundedRectangle(SB(If(sel, C4(200, 80, 160, 255), C4(60, 30, 60, 180))), Nothing, New Rect(tx, tabY, tabW - 6, tabH), 6, 6)
+                DrawCT(dc, catNames(i), 14, If(sel, C3(255, 240, 100), C3(200, 200, 220)), tabY + 8, sel)
+            Next
+            ' Item grid
+            Dim items = _storeItems.Where(Function(x) x.Category = _storeCategory).ToList()
+            Dim cols = 4, cellW = 240.0, cellH = 120.0
+            Dim gridX = (LOGICAL_WIDTH - cols * cellW) / 2.0, gridY = 140.0
+            For i = 0 To items.Count - 1
+                Dim row = i \ cols, col = i Mod cols
+                Dim cx = gridX + col * cellW, cy = gridY + row * cellH
+                Dim owned = IsOwned(items(i).Category, items(i).Id)
+                Dim selected = (i = _storeSelectedIndex)
+                Dim bg = If(selected, C4(160, 80, 160, 255), If(owned, C4(40, 60, 40, 200), C4(30, 20, 50, 200)))
+                dc.DrawRoundedRectangle(SB(bg), New Pen(SB(If(selected, C3(255, 240, 100), C3(80, 60, 100))), If(selected, 2.0, 1.0)), New Rect(cx + 4, cy + 4, cellW - 12, cellH - 10), 8, 8)
+                dc.DrawText(MkText(items(i).Name, 11, If(selected, C3(255, 240, 100), Colors.White), True), New Point(cx + 12, cy + 10))
+                dc.DrawText(MkText(items(i).Description, 9, C3(170, 170, 195)), New Point(cx + 12, cy + 30))
+                If owned Then
+                    Dim isEquip = (items(i).Category = StoreCategory.Balls AndAlso _equippedBall = items(i).Id) OrElse
+                                  (items(i).Category = StoreCategory.Bricks AndAlso _equippedBrickPalette = items(i).Id) OrElse
+                                  (items(i).Category = StoreCategory.Paddles AndAlso _activePaddleSkin = items(i).Id)
+                    dc.DrawText(MkText(If(isEquip, "✓ Equipped", "Owned"), 10, If(isEquip, C3(100, 255, 150), C3(150, 220, 150))), New Point(cx + 12, cy + cellH - 28))
+                ElseIf items(i).IsBase Then
+                    dc.DrawText(MkText("Free / Base", 10, C3(150, 200, 150)), New Point(cx + 12, cy + cellH - 28))
+                Else
+                    dc.DrawText(MkText($"🪙 {items(i).Price}", 11, C3(255, 215, 60)), New Point(cx + 12, cy + cellH - 28))
+                    If _coinBalance < items(i).Price Then dc.DrawText(MkText("(need more coins)", 8, C3(255, 120, 120)), New Point(cx + 80, cy + cellH - 26))
+                End If
+            Next
+            DrawCT(dc, "↑↓←→ Navigate   Enter = Buy/Equip   Tab = Category   Esc = Close", 10, C3(120, 120, 150), LOGICAL_HEIGHT - 28)
+        End Sub
+
+        Private Sub DrawCredits(dc As DrawingContext)
+            dc.DrawRectangle(SB(C4(230, 5, 5, 20)), Nothing, New Rect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            DrawCT(dc, "CREDITS", 30, C3(255, 200, 80), 30, True)
+            Dim lines() = {
+                ("BRICK BLAST", 22, C3(255, 240, 100), True),
+                ("CS-120 Final Project  |  Team Fast Talk", 14, C3(200, 200, 255), False),
+                ("", 10, Colors.White, False),
+                ("Lead Developer", 12, C3(255, 200, 80), True),
+                ("Curtis Loop", 16, Colors.White, False),
+                ("", 10, Colors.White, False),
+                ("WPF Port", 12, C3(255, 200, 80), True),
+                ("WPF DrawingContext Rendering", 13, C3(200, 220, 255), False),
+                ("DispatcherTimer Game Loop", 13, C3(200, 220, 255), False),
+                ("", 10, Colors.White, False),
+                ("Assets", 12, C3(255, 200, 80), True),
+                ("Procedural + SuperGameAsset pack", 13, C3(200, 220, 255), False),
+                ("Open Game Art (OGA Full Kit)", 13, C3(200, 220, 255), False),
+                ("", 10, Colors.White, False),
+                ("Music", 12, C3(255, 200, 80), True),
+                ("Brick Blast OST  |  Calculated Impact", 13, C3(200, 220, 255), False),
+                ("Machine Precision  |  Pinball Dream", 13, C3(200, 220, 255), False),
+                ("", 10, Colors.White, False),
+                ("Special Thanks", 12, C3(255, 200, 80), True),
+                ("Professor & CS-120 Classmates", 13, C3(200, 220, 255), False),
+                ("", 10, Colors.White, False),
+                ("Press ESC or C to return", 11, C3(130, 130, 160), False)
+            }
+            Dim y = 90.0
+            For Each line In lines
+                Dim ft = MkText(line.Item1, line.Item2, line.Item3, line.Item4)
+                dc.DrawText(ft, New Point((LOGICAL_WIDTH - ft.Width) / 2, y))
+                y += line.Item2 + 10
+            Next
+        End Sub
+
+        Private Sub DrawStats(dc As DrawingContext)
+            dc.DrawRectangle(SB(C4(230, 5, 10, 25)), Nothing, New Rect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            DrawCT(dc, "STATS", 30, C3(255, 200, 80), 20, True)
+            Dim mins = _statPlaytimeSeconds \ 60, secs = _statPlaytimeSeconds Mod 60
+            Dim rows() = {
+                ($"Player Name", _playerName),
+                ($"Bricks Destroyed", $"{_statBricksDestroyed:N0}"),
+                ($"Best Combo", $"x{_statBestCombo}"),
+                ($"Levels Completed", $"{_statLevelsCompleted}"),
+                ($"Total Coins Earned", $"{_statTotalCoinsEarned:N0}"),
+                ($"Current Coins", $"{_coinBalance}"),
+                ($"Total Playtime", $"{mins}m {secs}s"),
+                ($"High Score", $"{_highScore:N0}"),
+                ($"Daily Challenge Best", $"{_dailyBestScore:N0}"),
+                ($"Endless Mode Best", $"{_endlessBestScore:N0}")
+            }
+            Dim y = 90.0, pw = 600.0, px = (LOGICAL_WIDTH - pw) / 2
+            For Each row In rows
+                dc.DrawText(MkText(row.Item1, 13, C3(180, 200, 255)), New Point(px, y))
+                Dim val = MkText(row.Item2, 13, Colors.White, True)
+                dc.DrawText(val, New Point(px + pw - val.Width, y))
+                dc.DrawLine(New Pen(SB(C4(40, 100, 100, 150)), 1), New Point(px, y + 18), New Point(px + pw, y + 18))
+                y += 34
+            Next
+            DrawCT(dc, "Press S or Esc to close", 11, C3(120, 120, 150), LOGICAL_HEIGHT - 40)
+        End Sub
 #End Region
 
 #Region "Input"
@@ -1119,6 +1348,95 @@ Public Class GameCanvas
                 Return
             End If
             If _pendingHighScore Then Return
+
+            ' ── NameEntry ──
+            If _state = GameState.NameEntry Then
+                If e.Key = Key.Back Then
+                    If _nameEntryInput.Length > 0 Then _nameEntryInput = _nameEntryInput.Substring(0, _nameEntryInput.Length - 1)
+                ElseIf e.Key = Key.Enter Then
+                    If _nameEntryInput.Length > 0 Then
+                        _playerName = _nameEntryInput : SaveStats()
+                        _state = GameState.Menu
+                    End If
+                ElseIf e.Key = Key.Escape Then
+                    _state = GameState.Menu
+                Else
+                    Dim ch = KeyToChar(e)
+                    If ch IsNot Nothing AndAlso _nameEntryInput.Length < 12 Then _nameEntryInput &= ch
+                End If
+                Return
+            End If
+
+            ' ── GameOver ──
+            If _state = GameState.GameOver Then
+                If e.Key = Key.Back Then
+                    If _nameInput.Length > 0 Then _nameInput = _nameInput.Substring(0, _nameInput.Length - 1)
+                ElseIf e.Key = Key.Enter Then
+                    If _nameInput.Length > 0 AndAlso Not _highScoreSaved Then AddHighScore(_nameInput, _score) : _highScoreSaved = True
+                ElseIf e.Key = Key.Space AndAlso _highScoreSaved Then
+                    _usingHighScoreMusic = False : StartMusic() : _state = GameState.Menu
+                ElseIf Not _highScoreSaved Then
+                    Dim ch2 = KeyToChar(e)
+                    If ch2 IsNot Nothing AndAlso _nameInput.Length < 12 Then _nameInput &= ch2
+                End If
+                Return
+            End If
+
+            ' ── PauseMenu ──
+            If _state = GameState.PauseMenu Then
+                Select Case e.Key
+                    Case Key.Up : _pauseMenuSelection = (_pauseMenuSelection - 1 + 3) Mod 3
+                    Case Key.Down : _pauseMenuSelection = (_pauseMenuSelection + 1) Mod 3
+                    Case Key.Enter, Key.Space
+                        Select Case _pauseMenuSelection
+                            Case 0 : _state = GameState.Playing
+                            Case 1 : _state = GameState.Menu : StartMusic()
+                            Case 2 : Application.Current.Shutdown()
+                        End Select
+                    Case Key.Escape, Key.P : _state = GameState.Playing
+                End Select
+                Return
+            End If
+
+            ' ── Store ──
+            If _state = GameState.Store Then
+                Dim cats() = {StoreCategory.Balls, StoreCategory.Bricks, StoreCategory.Bonuses, StoreCategory.Paddles}
+                Dim catIdx = Array.IndexOf(cats, _storeCategory)
+                Dim items = _storeItems.Where(Function(x) x.Category = _storeCategory).ToList()
+                Select Case e.Key
+                    Case Key.Tab
+                        catIdx = (catIdx + 1) Mod cats.Length
+                        _storeCategory = cats(catIdx) : _storeSelectedIndex = 0
+                    Case Key.Up : _storeSelectedIndex = Math.Max(0, _storeSelectedIndex - 4)
+                    Case Key.Down : _storeSelectedIndex = Math.Min(items.Count - 1, _storeSelectedIndex + 4)
+                    Case Key.Left : _storeSelectedIndex = Math.Max(0, _storeSelectedIndex - 1)
+                    Case Key.Right : _storeSelectedIndex = Math.Min(items.Count - 1, _storeSelectedIndex + 1)
+                    Case Key.Enter, Key.Space
+                        If items.Count > 0 AndAlso _storeSelectedIndex < items.Count Then
+                            Dim it = items(_storeSelectedIndex)
+                            If IsOwned(it.Category, it.Id) Then
+                                EquipItem(it)
+                            ElseIf it.IsBase OrElse _coinBalance >= it.Price Then
+                                PurchaseItem(it) : EquipItem(it)
+                            End If
+                        End If
+                    Case Key.Escape : _state = _previousState
+                End Select
+                Return
+            End If
+
+            ' ── Credits ──
+            If _state = GameState.Credits Then
+                If e.Key = Key.Escape OrElse e.Key = Key.C Then _state = _previousState
+                Return
+            End If
+
+            ' ── Stats ──
+            If _state = GameState.Stats Then
+                If e.Key = Key.Escape OrElse e.Key = Key.S Then _state = _previousState
+                Return
+            End If
+
             If _state = GameState.HighScore Then
                 If e.Key = Key.Back Then
                     If _nameInput.Length > 0 Then _nameInput = _nameInput.Substring(0, _nameInput.Length - 1)
@@ -1158,7 +1476,9 @@ Public Class GameCanvas
                     End If
                 Case Key.P, Key.Escape
                     If _state = GameState.Playing Then
-                        _state = GameState.Paused
+                        _state = GameState.PauseMenu : _pauseMenuSelection = 0
+                    ElseIf _state = GameState.PauseMenu Then
+                        _state = GameState.Playing
                     ElseIf _state = GameState.Paused Then
                         _state = GameState.Playing
                     End If
@@ -1166,6 +1486,12 @@ Public Class GameCanvas
                     If _state = GameState.Playing Then _speedBoost = Not _speedBoost : PlaySFX(_sfxData(_sfxStyle)(10), 80)
                 Case Key.H, Key.O
                     If _state = GameState.Menu OrElse _state = GameState.Playing OrElse _state = GameState.Paused Then _previousState = _state : _state = GameState.Options
+                Case Key.B
+                    If _state = GameState.Menu OrElse _state = GameState.Playing OrElse _state = GameState.Paused Then _previousState = _state : _state = GameState.Store
+                Case Key.C
+                    If _state = GameState.Menu Then _previousState = _state : _state = GameState.Credits
+                Case Key.S
+                    If _state = GameState.Menu Then _previousState = _state : _state = GameState.Stats
             End Select
         End Sub
 
@@ -1280,6 +1606,149 @@ Public Class GameCanvas
                 _starFieldSpeed(i) = 0.2F + CSng(_rng.NextDouble()) * 0.6F : _starFieldBright(i) = _rng.Next(60, 200)
             Next
         End Sub
+
+        Private Sub InitStoreItems()
+            _storeItems.Clear()
+            ' ── Ball Skins ────────────────────────────────────────────────────
+            _storeItems.Add(New StoreItem With {.Id = "base", .Name = "Classic Ball", .Description = "Default white ball.", .Price = 0, .Category = StoreCategory.Balls, .IsBase = True})
+            _storeItems.Add(New StoreItem With {.Id = "fire", .Name = "Fire Ball", .Description = "Blazing orange flame trail.", .Price = 150, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "ice", .Name = "Ice Ball", .Description = "Arctic frost shimmer.", .Price = 150, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "gold", .Name = "Gold Ball", .Description = "Gleaming gold sphere.", .Price = 400, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "neon", .Name = "Neon Ball", .Description = "Electric cyan glow.", .Price = 300, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "plasma", .Name = "Plasma Ball", .Description = "Purple plasma ring.", .Price = 350, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "shadow", .Name = "Shadow Ball", .Description = "Dark void silhouette.", .Price = 350, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "rainbow", .Name = "Rainbow Ball", .Description = "Cycles all colors.", .Price = 600, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "galaxy", .Name = "Galaxy Ball", .Description = "Deep-space starfield.", .Price = 500, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "sakura", .Name = "Sakura Ball", .Description = "Cherry-blossom pink petals.", .Price = 200, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "lava", .Name = "Lava Ball", .Description = "Molten rock core.", .Price = 450, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "lightning", .Name = "Lightning Ball", .Description = "Electric spark crackle.", .Price = 500, .Category = StoreCategory.Balls, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "crystal", .Name = "Crystal Ball", .Description = "Transparent gem facets.", .Price = 550, .Category = StoreCategory.Balls, .IsBase = False})
+            ' ── Brick Palettes ───────────────────────────────────────────────
+            _storeItems.Add(New StoreItem With {.Id = "default", .Name = "Classic Colors", .Description = "Original rainbow bricks.", .Price = 0, .Category = StoreCategory.Bricks, .IsBase = True})
+            _storeItems.Add(New StoreItem With {.Id = "candy", .Name = "Candy Shop", .Description = "Sugary pastel palette.", .Price = 200, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "space", .Name = "Deep Space", .Description = "Dark cosmic blues.", .Price = 250, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "lava", .Name = "Lava World", .Description = "Fiery red-orange bricks.", .Price = 300, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "ice", .Name = "Arctic Ice", .Description = "Cool blue-white frost.", .Price = 250, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "toxic", .Name = "Toxic Waste", .Description = "Radioactive neon greens.", .Price = 300, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "sunset", .Name = "Sunset", .Description = "Warm orange-to-purple dusk.", .Price = 200, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "ocean", .Name = "Ocean Depths", .Description = "Aquamarine sea tones.", .Price = 220, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "forest", .Name = "Forest", .Description = "Natural earthy greens.", .Price = 180, .Category = StoreCategory.Bricks, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "monochrome", .Name = "Monochrome", .Description = "Clean grey shades.", .Price = 150, .Category = StoreCategory.Bricks, .IsBase = False})
+            ' ── Bonus Packs ──────────────────────────────────────────────────
+            _storeItems.Add(New StoreItem With {.Id = "base_bonus", .Name = "Starter Pack", .Description = "Basic power-up set.", .Price = 0, .Category = StoreCategory.Bonuses, .IsBase = True})
+            _storeItems.Add(New StoreItem With {.Id = "dragon", .Name = "Dragon Fire Pack", .Description = "Claws, flames, scales & dragon eggs.", .Price = 500, .Category = StoreCategory.Bonuses, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "sakura", .Name = "Sakura Spring Pack", .Description = "Petals, lanterns, fans & blossom rings.", .Price = 350, .Category = StoreCategory.Bonuses, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "robot", .Name = "Robot Wars Pack", .Description = "Gears, bolts, laser eyes & CPU chips.", .Price = 400, .Category = StoreCategory.Bonuses, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "pirate", .Name = "Pirate Seas Pack", .Description = "Skulls, treasure chests, cannons & hooks.", .Price = 300, .Category = StoreCategory.Bonuses, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "galaxy", .Name = "Galaxy Core Pack", .Description = "Supernovas, comets, wormholes & nebulae.", .Price = 600, .Category = StoreCategory.Bonuses, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "festival", .Name = "Festival Pack", .Description = "Fireworks, confetti, lanterns & party stars.", .Price = 250, .Category = StoreCategory.Bonuses, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "horror", .Name = "Halloween Horror Pack", .Description = "Skulls, bats, pumpkins & ghost trails.", .Price = 350, .Category = StoreCategory.Bonuses, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "golden", .Name = "Golden Age Pack", .Description = "Coins, laurels, crowns & golden rings.", .Price = 700, .Category = StoreCategory.Bonuses, .IsBase = False})
+            ' ── Paddle Skins ─────────────────────────────────────────────────
+            _storeItems.Add(New StoreItem With {.Id = "base", .Name = "Classic Paddle", .Description = "Default blue paddle.", .Price = 0, .Category = StoreCategory.Paddles, .IsBase = True})
+            _storeItems.Add(New StoreItem With {.Id = "fire", .Name = "Fire Paddle", .Description = "Blazing orange streak.", .Price = 180, .Category = StoreCategory.Paddles, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "ice", .Name = "Ice Paddle", .Description = "Arctic frost shimmer.", .Price = 180, .Category = StoreCategory.Paddles, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "gold", .Name = "Gold Paddle", .Description = "Gleaming gold bar.", .Price = 400, .Category = StoreCategory.Paddles, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "neon", .Name = "Neon Paddle", .Description = "Electric cyan glow.", .Price = 300, .Category = StoreCategory.Paddles, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "shadow", .Name = "Shadow Paddle", .Description = "Dark void silhouette.", .Price = 350, .Category = StoreCategory.Paddles, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "rainbow", .Name = "Rainbow Paddle", .Description = "Cycles all colors.", .Price = 600, .Category = StoreCategory.Paddles, .IsBase = False})
+            _storeItems.Add(New StoreItem With {.Id = "sakura", .Name = "Sakura Paddle", .Description = "Cherry-blossom pink.", .Price = 280, .Category = StoreCategory.Paddles, .IsBase = False})
+            ' Mark base items as owned
+            For Each item In _storeItems
+                If item.IsBase Then _ownedItems.Add(item.Category.ToString() & "_" & item.Id)
+            Next
+        End Sub
+
+        Private Sub LoadStore()
+            Try
+                If Not IO.File.Exists(_storePath) Then Return
+                Dim doc = JsonDocument.Parse(IO.File.ReadAllText(_storePath))
+                Dim root = doc.RootElement
+                If root.TryGetProperty("coins", Nothing) Then _coinBalance = root.GetProperty("coins").GetInt32()
+                If root.TryGetProperty("owned", Nothing) Then
+                    For Each item In root.GetProperty("owned").EnumerateArray()
+                        _ownedItems.Add(item.GetString())
+                    Next
+                End If
+                If root.TryGetProperty("equippedBall", Nothing) Then _equippedBall = root.GetProperty("equippedBall").GetString()
+                If root.TryGetProperty("equippedPalette", Nothing) Then _equippedBrickPalette = root.GetProperty("equippedPalette").GetString()
+                If root.TryGetProperty("equippedPaddle", Nothing) Then _activePaddleSkin = root.GetProperty("equippedPaddle").GetString()
+            Catch : End Try
+        End Sub
+
+        Private Sub SaveStore()
+            Try
+                Dim d = IO.Path.GetDirectoryName(_storePath)
+                If Not String.IsNullOrEmpty(d) AndAlso Not IO.Directory.Exists(d) Then IO.Directory.CreateDirectory(d)
+                Dim obj = New Dictionary(Of String, Object) From {
+                    {"coins", _coinBalance},
+                    {"owned", _ownedItems.ToArray()},
+                    {"equippedBall", _equippedBall},
+                    {"equippedPalette", _equippedBrickPalette},
+                    {"equippedPaddle", _activePaddleSkin}
+                }
+                IO.File.WriteAllText(_storePath, JsonSerializer.Serialize(obj))
+            Catch : End Try
+        End Sub
+
+        Private Sub LoadStats()
+            Try
+                If Not IO.File.Exists(_statsPath) Then Return
+                Dim doc = JsonDocument.Parse(IO.File.ReadAllText(_statsPath))
+                Dim root = doc.RootElement
+                If root.TryGetProperty("bricks", Nothing) Then _statBricksDestroyed = root.GetProperty("bricks").GetInt32()
+                If root.TryGetProperty("playtime", Nothing) Then _statPlaytimeSeconds = root.GetProperty("playtime").GetInt32()
+                If root.TryGetProperty("bestCombo", Nothing) Then _statBestCombo = root.GetProperty("bestCombo").GetInt32()
+                If root.TryGetProperty("coins", Nothing) Then _statTotalCoinsEarned = root.GetProperty("coins").GetInt32()
+                If root.TryGetProperty("levels", Nothing) Then _statLevelsCompleted = root.GetProperty("levels").GetInt32()
+                If root.TryGetProperty("dailyBest", Nothing) Then _dailyBestScore = root.GetProperty("dailyBest").GetInt32()
+                If root.TryGetProperty("endlessBest", Nothing) Then _endlessBestScore = root.GetProperty("endlessBest").GetInt32()
+                If root.TryGetProperty("name", Nothing) Then _playerName = root.GetProperty("name").GetString()
+            Catch : End Try
+        End Sub
+
+        Private Sub SaveStats()
+            Try
+                Dim d = IO.Path.GetDirectoryName(_statsPath)
+                If Not String.IsNullOrEmpty(d) AndAlso Not IO.Directory.Exists(d) Then IO.Directory.CreateDirectory(d)
+                Dim obj = New Dictionary(Of String, Object) From {
+                    {"bricks", _statBricksDestroyed}, {"playtime", _statPlaytimeSeconds},
+                    {"bestCombo", _statBestCombo}, {"coins", _statTotalCoinsEarned},
+                    {"levels", _statLevelsCompleted}, {"dailyBest", _dailyBestScore},
+                    {"endlessBest", _endlessBestScore}, {"name", _playerName}
+                }
+                IO.File.WriteAllText(_statsPath, JsonSerializer.Serialize(obj))
+            Catch : End Try
+        End Sub
+
+        Private Function IsOwned(cat As StoreCategory, id As String) As Boolean
+            Return _ownedItems.Contains(cat.ToString() & "_" & id)
+        End Function
+
+        Private Sub PurchaseItem(item As StoreItem)
+            If _coinBalance < item.Price Then PlaySFX(200, 100) : Return
+            _coinBalance -= item.Price
+            _ownedItems.Add(item.Category.ToString() & "_" & item.Id)
+            EquipItem(item)
+            SaveStore()
+            PlaySFX(_sfxData(_sfxStyle)(6), 120)
+        End Sub
+
+        Private Sub EquipItem(item As StoreItem)
+            Select Case item.Category
+                Case StoreCategory.Balls : _equippedBall = item.Id
+                Case StoreCategory.Bricks : _equippedBrickPalette = item.Id
+                Case StoreCategory.Paddles : _activePaddleSkin = item.Id
+            End Select
+            SaveStore()
+            PlaySFX(_sfxData(_sfxStyle)(4), 80)
+        End Sub
+
+        Private Sub EarnCoins(n As Integer)
+            _coinBalance += n
+            _statTotalCoinsEarned += n
+        End Sub
+
 #End Region
 
 #Region "Update Logic"
@@ -1320,6 +1789,9 @@ Public Class GameCanvas
                         bk.HitsLeft -= 1
                         If bk.HitsLeft <= 0 Then
                             bk.Alive = False : _combo += 1 : _comboTimer = 90 : _score += bk.Points * Math.Min(_combo, 8)
+                            _statBricksDestroyed += 1
+                            If _combo > _statBestCombo Then _statBestCombo = _combo
+                            EarnCoins(1 + _combo \ 3)
                             SpawnParticles(CSng(bk.Rect.X + bk.Rect.Width / 2), CSng(bk.Rect.Y + bk.Rect.Height / 2), bk.Color1, PARTICLE_COUNT)
                             If _combo >= 2 Then PlayComboSound() Else PlayBrickHit()
                             _screenShake = 3
@@ -1378,6 +1850,9 @@ Public Class GameCanvas
             If _comboTimer > 0 Then _comboTimer -= 1 : If _comboTimer <= 0 Then _combo = 0
             If _paddleWidthTimer > 0 Then _paddleWidthTimer -= 1 : If _paddleWidthTimer <= 0 Then _paddleWidth = PADDLE_WIDTH
             If _getReadyFrames > 0 Then _getReadyFrames -= 1
+            If _streakCalloutTimer > 0 Then _streakCalloutTimer -= 1
+            _statPlaytimeFrames += 1
+            If _statPlaytimeFrames >= 60 Then _statPlaytimeSeconds += 1 : _statPlaytimeFrames = 0
         End Sub
 
         Private Sub UpdateStarField()
@@ -1388,7 +1863,12 @@ Public Class GameCanvas
         End Sub
 
         Private Sub CheckLevelComplete()
-            If _bricks.All(Function(bk) Not bk.Alive) Then _state = GameState.LevelComplete : PlayLevelWin()
+            If _bricks.All(Function(bk) Not bk.Alive) Then
+                _statLevelsCompleted += 1
+                EarnCoins(10 + _level * 2)
+                SaveStore() : SaveStats()
+                _state = GameState.LevelComplete : PlayLevelWin()
+            End If
         End Sub
 
         Private Sub CheckEnemyBallCollisions()
