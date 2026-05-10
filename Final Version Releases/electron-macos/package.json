@@ -1,0 +1,23 @@
+{
+  "name": "brickblast-velocity-market",
+  "version": "1.0.0",
+  "description": "BrickBlast: Velocity Market — macOS Electron wrapper",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac --x64 --arm64"
+  },
+  "build": {
+    "appId": "com.teamfasttalk.brickblast",
+    "productName": "BrickBlast: Velocity Market",
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "category": "public.app-category.games"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=BrickBlast: Velocity Market
+Comment=Arcade brick-breaker with marketplace
+Exec=bash BrickBlast.sh
+Icon=brickblast
+Terminal=false
+Type=Application
+Categories=Game;ArcadeGame;
+
