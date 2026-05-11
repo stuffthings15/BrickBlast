@@ -1,85 +1,80 @@
-# Publishing Guide — Android Tablet
+# Publishing Guide — Android Tablet (Google Play + APK)
 
-**Target:** Android tablets (landscape-first layout, 7"+ screens)  
-**Artifact:** APK / AAB via Capacitor  
-**Status:** 🔒 NEEDS HOST — requires Android Studio
-
----
-
-## What's in This Folder
-
-| File/Folder | Description |
-|-------------|-------------|
-| `game/` | HTML5 game assets |
-| `README.md` | Tablet-specific notes |
-
-The Android native project lives in `../mobile-capacitor/android/`.
+**Target:** Android 7.0+ (API 24) tablets — 7" and larger  
+**Package type:** Capacitor 6 native container wrapping canonical HTML5 game  
+**Source:** `mobile/www/index.html` (must be the canonical ~65 KB version from `web/index.html`)
 
 ---
 
-## Tablet-Specific Differences
+## Step 1 — Sync Canonical Game Source
 
-The HTML5 game scales responsively based on viewport. Tablets benefit from:
-- Wider canvas → more game area visible
-- Larger hit targets
-- Landscape orientation as default
-
-In `capacitor.config.json`, orientation is set to `landscape`. No code change needed.
-
----
-
-## Build (Same as Android Phone)
-
-```bash
-cd "../mobile-capacitor"
-npm install
-npx cap sync android
-npx cap open android
+```powershell
+# From project root
+Copy-Item "web\index.html"   "mobile\www\index.html"   -Force
+Copy-Item "web\manifest.json" "mobile\www\manifest.json" -Force
+Copy-Item "web\icons"        "mobile\www\icons"         -Recurse -Force
 ```
 
-Build APK or AAB — same process as phone. The same binary runs on both phone and tablet.
+Verify: `mobile\www\index.html` should be **~65 KB**.
 
 ---
 
-## Publish — Google Play Store (Tablet Optimization)
+## Step 2 — Sync into Android Project
 
-Google Play separates phone and tablet listings via screenshots. To qualify for tablet optimization badge:
-
-1. Upload **tablet screenshots** (7" and 10") alongside phone screenshots
-2. In Play Console: **Main store listing → Phone/7" tablet/10" tablet** tabs
-3. Upload screenshots (minimum 1024×600 landscape for 7"; 1280×800 for 10")
-4. The game is the same APK/AAB — just add the extra screenshots
-
----
-
-## Tablet Screenshot Guidance
-
-Capture at 1280×800 or similar resolution showing landscape gameplay:
-- Main menu
-- Gameplay (full level with bricks)
-- Marketplace store
-- Results screen
-
-Use the Windows exe in a 1280×800 window and press F12 to auto-generate screenshots, then crop/resize.
+```bash
+cd mobile
+npm install
+npx cap sync android
+```
 
 ---
 
-## Testing Before Publish
+## Step 3 — Build Signed APK and AAB
 
-- [ ] App installs on a 7"+ tablet
-- [ ] Game renders in landscape correctly
-- [ ] Controls work at tablet scale (wider paddle range)
-- [ ] No UI elements cut off at edges
-- [ ] Store and results screens render correctly at larger resolution
-- [ ] Multi-window / split-screen does not crash
+### Option A — Android Studio
+1. Open `mobile\android\` in Android Studio
+2. **Build → Generate Signed Bundle / APK**
+3. Choose **Android App Bundle** → use `mobile\brickblast-release.keystore`
+4. Output: `mobile\android\app\build\outputs\bundle\release\app-release.aab`
+
+### Option B — Command line
+```bash
+cd mobile/android
+./gradlew bundleRelease assembleRelease
+```
+
+### Copy artifacts to this folder
+```powershell
+Copy-Item "mobile\android\app\build\outputs\bundle\release\app-release.aab" "versions\android-tablet\BrickBlast-release.aab" -Force
+Copy-Item "mobile\android\app\build\outputs\apk\release\app-release.apk"    "versions\android-tablet\BrickBlast-release.apk" -Force
+```
 
 ---
 
-## System Requirements
+## Step 4 — Test Before Submission
 
-| Requirement | Minimum |
-|-------------|---------|
-| Android | 7.0 (API 24) |
-| Screen | 7" minimum, 1024×600 |
-| RAM | 2 GB |
-| Storage | 100 MB |
+- [ ] APK installs on Android 7.0+ tablet
+- [ ] Launches in landscape; canvas fills screen correctly
+- [ ] Store, music, power-ups, and save all work correctly
+- [ ] Daily Challenge and Endless Mode accessible
+- [ ] Touch controls work; back button exits cleanly
+- [ ] Works fully offline
+
+---
+
+## Step 5 — Submit to Google Play
+
+The tablet APK/AAB uses the **same package ID** as the phone version (`com.teamfasttalk.brickblast`).
+Use the same Play Console submission — Google Play delivers the correct binary to phones and tablets
+automatically. See `PLAY_STORE_GUIDE.md` for the full listing and submission checklist.
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `BrickBlast-release.aab` | Play Store upload artifact |
+| `BrickBlast-release.apk` | Signed APK for sideloading |
+| `BrickBlast-Android.apk` | Debug APK for testing only |
+| `PLAY_STORE_GUIDE.md` | Store listing and submission walkthrough |

@@ -1,80 +1,78 @@
-# Publishing Guide — macOS ARM64 (Apple Silicon)
+# Publishing Guide — macOS Apple Silicon ARM64
 
-**Target:** macOS 12+ on Apple Silicon (M1/M2/M3/M4)  
-**Artifact:** Shell launcher + bundled HTML5 game (DMG requires Mac build)  
-**Status:** 🔒 NEEDS HOST — native .app/.dmg requires a Mac
-
----
-
-## What's in This Folder
-
-| File/Folder | Description |
-|-------------|-------------|
-| `BrickBlast.sh` | macOS shell launcher |
-| `BrickBlast.app/` | macOS app bundle skeleton |
-| `game/` | HTML5 game assets |
+**Target:** macOS 11+ (Apple Silicon M1/M2/M3/M4)  
+**Package type:** Self-contained .NET 10 + Avalonia native binary  
+**Source project:** `anime finder macos/` sub-project (Avalonia cross-platform)
 
 ---
 
-## Build Native ARM64 App (On Mac)
+## Step 1 — Rebuild the Native Binary
 
-```bash
-# From electron-macos folder
-cd "../electron-macos"
-npm install
-npm run build -- --mac --arm64
-# Output: dist/BrickBlast-1.0.0-arm64.dmg
-```
-
-For a Universal binary that runs on both Intel and Apple Silicon:
-```bash
-npm run build -- --mac --universal
+```powershell
+# From project root (any OS with .NET 10 SDK)
+dotnet publish "anime finder macos\anime finder macos.csproj" `
+    -c Release `
+    -r osx-arm64 `
+    --self-contained true `
+    -o "versions\macos-arm64"
 ```
 
 ---
 
-## Notarize for Gatekeeper
+## Step 2 — Copy Game Assets
 
-Apple Silicon Macs enforce Gatekeeper strictly. Unsigned apps cannot run without right-click → Open.
-
-```bash
-# Submit for notarization
-xcrun notarytool submit dist/BrickBlast-1.0.0-arm64.dmg \
-  --apple-id "your@email.com" \
-  --team-id "TEAMID" \
-  --password "app-specific-password" \
-  --wait
-
-# Staple the ticket
-xcrun stapler staple dist/BrickBlast-1.0.0-arm64.dmg
+```powershell
+Copy-Item "anime finder macos\Assets" "versions\macos-arm64\Assets" -Recurse -Force
 ```
 
 ---
 
-## Publish to itch.io
+## Step 3 — Notarize (Optional, for Mac App Store / Gatekeeper)
 
 ```bash
-butler push dist/BrickBlast-1.0.0-arm64.dmg teamfasttalk/brickblast:osx-arm64 --userversion 1.0.0
+# On macOS build machine (Apple Silicon)
+codesign --deep --force --sign "Developer ID Application: Your Name" "anime finder macos"
+xcrun notarytool submit "anime finder macos" --apple-id you@example.com \
+    --team-id XXXXXXXXXX --password @keychain:notary-pass --wait
+xcrun stapler staple "anime finder macos"
 ```
 
-Or publish the universal DMG to the general `osx` channel to serve all Mac users from one artifact.
+---
+
+## Step 4 — Test
+
+```bash
+chmod +x RUN_MACOS_ARM64.sh && ./RUN_MACOS_ARM64.sh
+```
+
+### Test Checklist
+- [ ] App launches natively on Apple Silicon (no Rosetta translation)
+- [ ] Gatekeeper prompt handled (right-click → Open on first run)
+- [ ] Music, sound effects, and store all work
+- [ ] Power-ups, daily challenge, and endless mode work
+- [ ] Controller input works
+- [ ] High scores persist between sessions
+- [ ] Verify ARM64 architecture: `file "anime finder macos"` should show `arm64`
 
 ---
 
-## Testing Before Publish
+## Step 5 — Distribute
 
-- [ ] Runs natively on M1/M2/M3 (Activity Monitor shows "Apple" architecture)
-- [ ] No Rosetta 2 translation (native ARM64 binary)
-- [ ] Game loads and plays at full performance
-- [ ] Metal/GPU rendering works correctly
+### itch.io
+1. Zip the `versions/macos-arm64/` folder
+2. Upload to [itch.io](https://itch.io) → Edit Game → Uploads, mark as **macOS**
+
+### GitHub Releases
+1. Attach `BrickBlast-macos-arm64.zip` to the GitHub Release
 
 ---
 
-## System Requirements
+## Key Files
 
-| Requirement | Minimum |
-|-------------|---------|
-| OS | macOS 12 Monterey |
-| Chip | Apple Silicon (M1 or later) |
-| RAM | 512 MB |
-| Storage | 250 MB |
+| File | Purpose |
+|------|---------|
+| `anime finder macos` | Native macOS ARM64 executable |
+| `libSkiaSharp.dylib` | Skia rendering |
+| `libHarfBuzzSharp.dylib` | Text shaping |
+| `libAvaloniaNative.dylib` | Avalonia native layer |
+| `Assets/` | Game assets |

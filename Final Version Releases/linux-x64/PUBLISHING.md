@@ -1,94 +1,70 @@
 # Publishing Guide — Linux x64
 
-**Target:** Linux x64 (Ubuntu, Debian, Fedora, Arch, etc.)  
-**Artifact:** Shell launcher + bundled HTML5 game (browser-based)  
-**Status:** ✅ READY
+**Target:** Linux x86-64 desktop  
+**Package type:** Self-contained .NET 10 + Avalonia native binary  
+**Source project:** `anime finder macos/` sub-project (Avalonia cross-platform)
 
 ---
 
-## What's in This Folder
+## Step 1 — Rebuild the Native Binary
 
-| File/Folder | Description |
-|-------------|-------------|
-| `BrickBlast.sh` | Native launcher script |
-| `BrickBlast-Linux-x64.zip` | Complete distributable zip (Git LFS) |
-| `BrickBlast.desktop` | Desktop integration file |
-| `game/` | HTML5 game assets served locally |
-
----
-
-## How the Launcher Works
-
-`BrickBlast.sh` checks for a prebuilt Electron AppImage first. If not found, it serves `game/` on `localhost:7777` via Python's HTTP server and opens the URL with `xdg-open` (your default browser).
-
----
-
-## Option 1 — itch.io (Recommended)
-
-```bash
-butler login
-butler push BrickBlast-Linux-x64.zip teamfasttalk/brickblast:linux-x64 --userversion 1.0.0
-```
-
-The zip is already in Git LFS — pull it first if missing:
-```bash
-git lfs pull
+```powershell
+# From project root (Windows build machine with .NET 10 SDK)
+dotnet publish "anime finder macos\anime finder macos.csproj" `
+    -c Release `
+    -r linux-x64 `
+    --self-contained true `
+    -o "versions\linux\bin"
 ```
 
 ---
 
-## Option 2 — GitHub Releases
+## Step 2 — Copy Game Assets
 
-Attach `BrickBlast-Linux-x64.zip` to release `v1.0.0` on GitHub.  
-> The file is stored in Git LFS. GitHub Releases serves LFS files correctly.
-
----
-
-## Option 3 — Direct Tarball
-
-```bash
-tar -czf BrickBlast-Linux-x64.tar.gz BrickBlast.sh BrickBlast.desktop game/ icons/
-```
-Host on any static server or share directly.
-
----
-
-## Desktop Integration (Optional)
-
-```bash
-# Install desktop entry so app appears in application launcher
-cp BrickBlast.desktop ~/.local/share/applications/
-update-desktop-database ~/.local/share/applications/
+```powershell
+# Copy audio and graphics assets into the output folder
+Copy-Item "anime finder macos\Assets" "versions\linux\assets" -Recurse -Force
 ```
 
 ---
 
-## User Installation Steps
+## Step 3 — Test on Linux
+
+Transfer the `versions/linux/` folder to a Linux machine, then:
 
 ```bash
-unzip BrickBlast-Linux-x64.zip
-cd BrickBlast-Linux-x64
-chmod +x BrickBlast.sh
-./BrickBlast.sh
+chmod +x RUN_LINUX.sh
+./RUN_LINUX.sh
 ```
 
----
-
-## Testing Before Publish
-
-- [ ] `./BrickBlast.sh` launches on Ubuntu 20.04
-- [ ] Browser opens to `localhost:7777` with game
-- [ ] Game plays correctly
-- [ ] Script exits cleanly when browser is closed
-- [ ] Desktop integration file installs correctly
+### Test Checklist
+- [ ] App launches without any browser or runtime dependency
+- [ ] Music, sound effects, and store all work
+- [ ] Power-ups, daily challenge, and endless mode work
+- [ ] Controller input works
+- [ ] High scores persist between sessions
+- [ ] Desktop shortcut launches the app correctly
 
 ---
 
-## System Requirements
+## Step 4 — Distribute
 
-| Requirement | Minimum |
-|-------------|---------|
-| OS | Ubuntu 20.04 / Debian 11 or equivalent |
-| Architecture | x86_64 |
-| Dependencies | Python 3 + `xdg-open` (standard on most distros) |
-| Browser | Any modern browser (Chrome, Firefox, Chromium) |
+### itch.io
+1. Zip the entire `versions/linux/` folder
+2. Upload to [itch.io](https://itch.io) → Edit Game → Uploads
+3. Mark as **Linux** platform
+
+### GitHub Releases
+1. Tag the release: `git tag v1.x.x && git push origin v1.x.x`
+2. Attach `BrickBlast-linux-x64.zip` to the GitHub Release
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `bin/anime finder macos` | Native Linux x64 executable |
+| `bin/libSkiaSharp.so` | Native rendering library |
+| `bin/libHarfBuzzSharp.so` | Text shaping library |
+| `assets/` | Game assets (audio, graphics) |

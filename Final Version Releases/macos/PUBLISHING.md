@@ -1,87 +1,78 @@
-# Publishing Guide — macOS (Intel x64)
+# Publishing Guide — macOS Intel x64
 
-**Target:** macOS 12+ on Intel Macs  
-**Artifact:** Shell launcher + bundled HTML5 game (DMG requires Mac build)  
-**Status:** 🔒 NEEDS HOST — native .app/.dmg requires a Mac
-
----
-
-## What's in This Folder
-
-| File/Folder | Description |
-|-------------|-------------|
-| `BrickBlast.sh` | macOS shell launcher (browser fallback) |
-| `BrickBlast.app/` | macOS app bundle skeleton |
-| `BrickBlast.app/Contents/Info.plist` | App bundle metadata |
-| `game/` | HTML5 game assets |
+**Target:** macOS 11+ (Intel x64)  
+**Package type:** Self-contained .NET 10 + Avalonia native binary  
+**Source project:** `anime finder macos/` sub-project (Avalonia cross-platform)
 
 ---
 
-## Option A — Shell Launcher (No Mac Required for Prep)
+## Step 1 — Rebuild the Native Binary
 
-The `BrickBlast.sh` launcher serves the game via Python and opens Safari/Chrome. Users run:
-
-```bash
-chmod +x BrickBlast.sh
-./BrickBlast.sh
-```
-
-Distribute as a `.zip` — users extract and run.
-
----
-
-## Option B — Native .app Bundle (Requires Mac)
-
-On a Mac, convert the launcher to a proper `.app`:
-
-```bash
-# Make executable
-chmod +x BrickBlast.app/Contents/MacOS/BrickBlast
-
-# Create a DMG
-hdiutil create -volname "Brick Blast" -srcfolder BrickBlast.app \
-  -ov -format UDZO BrickBlast-macOS-Intel.dmg
+```powershell
+# From project root (any OS with .NET 10 SDK)
+dotnet publish "anime finder macos\anime finder macos.csproj" `
+    -c Release `
+    -r osx-x64 `
+    --self-contained true `
+    -o "versions\macos"
 ```
 
 ---
 
-## Option C — Electron DMG (Recommended — Requires Mac)
+## Step 2 — Copy Game Assets
 
-Build from `../electron-macos/`:
-```bash
-cd "../electron-macos"
-npm install
-npm run build -- --mac --x64
-# Output: dist/BrickBlast-1.0.0.dmg
-```
-
-See `../electron-macos/PUBLISHING.md` for signing and notarization.
-
----
-
-## Publish to itch.io
-
-```bash
-butler push BrickBlast-macOS-Intel.dmg teamfasttalk/brickblast:osx --userversion 1.0.0
+```powershell
+Copy-Item "anime finder macos\Assets" "versions\macos\assets" -Recurse -Force
 ```
 
 ---
 
-## Publish to Mac App Store
+## Step 3 — Notarize (Optional, for Mac App Store / Gatekeeper)
 
-Requires:
-- Apple Developer Program ($99/year)
-- Mac with Xcode 15+
-- App Sandbox entitlements
-- Review by Apple (3–14 days)
-
-See [Apple's submission guide](https://developer.apple.com/distribute/).
+For distribution outside the Mac App Store:
+```bash
+# On macOS build machine
+codesign --deep --force --sign "Developer ID Application: Your Name" "anime finder macos"
+xcrun notarytool submit "anime finder macos" --apple-id you@example.com \
+    --team-id XXXXXXXXXX --password @keychain:notary-pass --wait
+xcrun stapler staple "anime finder macos"
+```
 
 ---
 
-## Testing Before Publish
+## Step 4 — Test
 
-- [ ] App launches on macOS 12 (Monterey) Intel
-- [ ] No Gatekeeper block (signed) or right-click → Open works (unsigned)
-- [ ] Game loads in browser/Electron window
-- [ ] Cmd+Q quits cleanly
+```bash
+chmod +x RUN_MACOS.sh && ./RUN_MACOS.sh
+```
+
+### Test Checklist
+- [ ] App launches without browser or runtime dependency
+- [ ] Gatekeeper prompt handled (right-click → Open on first run)
+- [ ] Music, sound effects, and store all work
+- [ ] Power-ups, daily challenge, and endless mode work
+- [ ] Controller input works
+- [ ] High scores persist between sessions
+
+---
+
+## Step 5 — Distribute
+
+### itch.io
+1. Zip the `versions/macos/` folder
+2. Upload to [itch.io](https://itch.io) → Edit Game → Uploads, mark as **macOS**
+
+### GitHub Releases
+1. Attach `BrickBlast-macos-x64.zip` to the GitHub Release
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `anime finder macos` | Native macOS x64 executable |
+| `libSkiaSharp.dylib` | Skia rendering |
+| `libHarfBuzzSharp.dylib` | Text shaping |
+| `libAvaloniaNative.dylib` | Avalonia native layer |
+| `assets/` | Game assets |

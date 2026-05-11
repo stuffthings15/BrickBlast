@@ -1,73 +1,70 @@
-# Publishing Guide — Linux ARM64
+# Publishing Guide — Linux x64
 
-**Target:** Linux ARM64 (Raspberry Pi 4+, Ampere, AWS Graviton, etc.)  
-**Artifact:** Shell launcher + bundled HTML5 game  
-**Status:** ✅ READY
-
----
-
-## What's in This Folder
-
-| File/Folder | Description |
-|-------------|-------------|
-| `BrickBlast.sh` | Native launcher script |
-| `BrickBlast-Linux-arm64.zip` | Complete distributable zip (Git LFS) |
-| `BrickBlast.desktop` | Desktop integration file |
-| `game/` | HTML5 game assets |
+**Target:** Linux x86-64 desktop  
+**Package type:** Self-contained .NET 10 + Avalonia native binary  
+**Source project:** `anime finder macos/` sub-project (Avalonia cross-platform)
 
 ---
 
-## How the Launcher Works
+## Step 1 — Rebuild the Native Binary
 
-Same as the x64 launcher: checks for an Electron AppImage, falls back to Python HTTP server on `localhost:7777` + `xdg-open`.
-
----
-
-## Option 1 — itch.io
-
-```bash
-butler login
-butler push BrickBlast-Linux-arm64.zip teamfasttalk/brickblast:linux-arm64 --userversion 1.0.0
-```
-
-Pull from LFS first if needed:
-```bash
-git lfs pull
+```powershell
+# From project root (Windows build machine with .NET 10 SDK)
+dotnet publish "anime finder macos\anime finder macos.csproj" `
+    -c Release `
+    -r linux-x64 `
+    --self-contained true `
+    -o "versions\linux\bin"
 ```
 
 ---
 
-## Option 2 — GitHub Releases
+## Step 2 — Copy Game Assets
 
-Attach `BrickBlast-Linux-arm64.zip` to release `v1.0.0`.
-
----
-
-## User Installation Steps
-
-```bash
-unzip BrickBlast-Linux-arm64.zip
-cd BrickBlast-Linux-arm64
-chmod +x BrickBlast.sh
-./BrickBlast.sh
+```powershell
+# Copy audio and graphics assets into the output folder
+Copy-Item "anime finder macos\Assets" "versions\linux\assets" -Recurse -Force
 ```
 
 ---
 
-## Testing Before Publish
+## Step 3 — Test on Linux
 
-- [ ] `./BrickBlast.sh` launches on Raspberry Pi OS (64-bit) or Ubuntu ARM
-- [ ] Browser opens game at `localhost:7777`
-- [ ] Touch controls work on touchscreen devices
-- [ ] Performance acceptable (30+ FPS) on Raspberry Pi 4
+Transfer the `versions/linux/` folder to a Linux machine, then:
+
+```bash
+chmod +x RUN_LINUX.sh
+./RUN_LINUX.sh
+```
+
+### Test Checklist
+- [ ] App launches without any browser or runtime dependency
+- [ ] Music, sound effects, and store all work
+- [ ] Power-ups, daily challenge, and endless mode work
+- [ ] Controller input works
+- [ ] High scores persist between sessions
+- [ ] Desktop shortcut launches the app correctly
 
 ---
 
-## System Requirements
+## Step 4 — Distribute
 
-| Requirement | Minimum |
-|-------------|---------|
-| OS | Ubuntu 22.04 ARM / Raspberry Pi OS 64-bit |
-| Architecture | aarch64 (ARM64) |
-| Dependencies | Python 3 + `xdg-open` |
-| Hardware | Raspberry Pi 4 (2 GB RAM+) or equivalent |
+### itch.io
+1. Zip the entire `versions/linux/` folder
+2. Upload to [itch.io](https://itch.io) → Edit Game → Uploads
+3. Mark as **Linux** platform
+
+### GitHub Releases
+1. Tag the release: `git tag v1.x.x && git push origin v1.x.x`
+2. Attach `BrickBlast-linux-x64.zip` to the GitHub Release
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `bin/anime finder macos` | Native Linux x64 executable |
+| `bin/libSkiaSharp.so` | Native rendering library |
+| `bin/libHarfBuzzSharp.so` | Text shaping library |
+| `assets/` | Game assets (audio, graphics) |
