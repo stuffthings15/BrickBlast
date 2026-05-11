@@ -1,80 +1,95 @@
-# Publishing Guide — iPad Native Build (versions folder)
+# Publishing Guide — iPad (App Store + IPA)
 
-**Target:** iPad — Apple App Store via Capacitor + Xcode  
-**This folder is the source of truth for the iPad native build.**
+**Target:** iPadOS 15.0+ — Apple App Store  
+**Package type:** Capacitor 6 native container wrapping canonical HTML5 game  
+**Source:** `mobile/www/index.html` (must be the canonical ~65 KB version from `web/index.html`)  
+**Build machine required:** macOS 13+ with Xcode 15+
 
 ---
 
-## Quick Start
-
-Run on a Mac with Xcode and Node installed:
+## Step 1 — Sync Canonical Game Source
 
 ```bash
-chmod +x BUILD_IOS.sh
-./BUILD_IOS.sh
+# From project root
+cp web/index.html   mobile/www/index.html
+cp web/manifest.json mobile/www/manifest.json
+cp -r web/icons     mobile/www/icons
 ```
 
-This script:
-1. Installs Capacitor npm packages (`npm install`)
-2. Stages web assets into `www/` from `index.html`, `manifest.json`, and `icons/`
-3. Syncs web assets into the Xcode project (`npx cap sync ios`)
-4. Installs CocoaPods if needed
-5. Builds the Xcode archive → `xcode-project/App/build/BrickBlast.xcarchive`
+Verify: `mobile/www/index.html` should be **~65 KB** and include the store, sound, and all power-ups.
 
 ---
 
-## Prerequisites (Mac Required)
+## Step 2 — Install Dependencies and Sync Capacitor
 
-| Tool | Install |
-|------|---------|
-| Xcode 15+ | Mac App Store |
-| Node.js 18+ | https://nodejs.org |
-| CocoaPods | `sudo gem install cocoapods` (script installs automatically) |
-| Apple Developer account | https://developer.apple.com ($99/year for App Store) |
-
----
-
-## After the Build
-
-1. Open `xcode-project/App/App.xcworkspace` in Xcode
-2. Go to **Window → Organizer**
-3. Select the `BrickBlast` archive
-4. Click **Distribute App**
-5. Choose: **App Store Connect** (for submission) or **Ad Hoc** (for device testing)
+```bash
+cd mobile
+npm install
+npx cap sync ios
+cd ios/App
+pod install
+```
 
 ---
 
-## App Store Submission
+## Step 3 — Configure Signing in Xcode
 
-For full App Store submission steps and listing content, see:
-- `../../Final Version Releases/ipad/PUBLISHING.md` — complete submission guide
-- `../../docs/Submission/StoreListingCopy.md` — store listing copy
-- `../../docs/Screenshots/` — screenshots
+1. Open `mobile/ios/App/App.xcworkspace` in Xcode
+2. Select the **App** target → **Signing & Capabilities**
+3. Set your **Team** and **Bundle Identifier** (`com.teamfasttalk.brickblast`)
+4. Ensure a valid **Distribution Certificate** and **Provisioning Profile** are configured
 
 ---
 
-## Key Files in This Folder
+## Step 4 — Archive and Export IPA
+
+### Option A — Xcode UI
+1. **Product → Archive**
+2. In Organizer: **Distribute App → App Store Connect → Upload**
+
+### Option B — Command line
+```bash
+xcodebuild -workspace mobile/ios/App/App.xcworkspace \
+           -scheme App \
+           -configuration Release \
+           -archivePath build/BrickBlast.xcarchive \
+           archive
+xcodebuild -exportArchive \
+           -archivePath build/BrickBlast.xcarchive \
+           -exportPath build/BrickBlast-iPad \
+           -exportOptionsPlist ExportOptions.plist
+```
+
+---
+
+## Step 5 — Test Before Submission
+
+- [ ] App installs on iPadOS 15.0+ device or simulator
+- [ ] Launches; canvas fills iPad viewport correctly
+- [ ] Store, music, power-ups, and saves all work
+- [ ] Daily Challenge and Endless Mode accessible
+- [ ] Touch controls work; hardware back exits cleanly
+- [ ] Works fully offline
+
+---
+
+## Step 6 — Submit to App Store Connect
+
+1. Log in to [App Store Connect](https://appstoreconnect.apple.com)
+2. Create a new App (or select existing) with bundle ID `com.teamfasttalk.brickblast`
+3. Upload the IPA via Xcode Organizer or Transporter
+4. Fill out listing: name, description, screenshots (iPad 12.9"), age rating, keywords
+5. Submit for review
+
+See `APP_STORE_GUIDE.md` for the full listing checklist and screenshot requirements.
+
+---
+
+## Key Files
 
 | File | Purpose |
 |------|---------|
-| `BUILD_IOS.sh` | Main build automation script |
-| `BUILD_IOS.bat` | Windows helper (opens Mac SSH instructions) |
-| `RUN_IPAD.bat` | Launches browser preview on Windows |
-| `capacitor.config.json` | Capacitor app config (appId, webDir, iOS path) |
-| `package.json` | Capacitor npm dependencies |
-| `index.html` | The complete HTML5 game |
-| `manifest.json` | PWA manifest |
-| `icons/` | All app icons |
-| `xcode-project/App/` | Xcode/Capacitor iOS native project |
-
----
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| `npx cap` not found | Run `npm install` first |
-| Pod install fails | Run `sudo gem install cocoapods` then retry |
-| Xcode says web assets missing | Run `npx cap sync ios` manually |
-| `www/` folder has old content | Script does `rm -rf www` on each run — this is expected |
-| Simulator works but device doesn't | Check provisioning profile and signing in Xcode → Signing & Capabilities |
+| `BUILD_IOS.sh` | Automated build script (runs steps 1–4) |
+| `APP_STORE_GUIDE.md` | Full App Store Connect submission checklist |
+| `capacitor.config.json` | Capacitor project configuration |
+| `package.json` | npm dependencies |

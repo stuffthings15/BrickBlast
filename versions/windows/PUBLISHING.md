@@ -1,38 +1,54 @@
-# Publishing Guide — Windows (versions folder)
+# Publishing Guide — Windows Desktop x64
 
-**Target:** Windows 10/11 — self-contained .NET executable  
-**This is the canonical Windows release of the game.**
-
----
-
-## Quick Start
-
-Double-click `BrickBlast.exe` to launch. No installation required.
+**Target:** Windows 10/11 (64-bit x64) — native WinForms, self-contained .NET 10  
+**Source:** `Form1.vb` + `anime finder.vbproj` at project root  
+**This is the canonical Windows release.**
 
 ---
 
-## Distributing This Build
+## Step 1 — Rebuild (if needed)
 
-This folder contains the canonical WinForms executable built from `Form1.vb`.
-
-For publishing to stores and platforms, see the detailed platform-specific guides:
-
-| Platform | Guide |
-|----------|-------|
-| itch.io | `../../Final Version Releases/itch.io/PUBLISHING.md` |
-| Windows Store (MSIX) | `../../Final Version Releases/windows-store/PUBLISHING.md` |
-| GitHub Releases | `../../Final Version Releases/windows-x64/PUBLISHING.md` |
-| Windows ARM64 | `../../Final Version Releases/windows-arm64/PUBLISHING.md` |
-
----
-
-## Rebuilding
-
-From the solution root (requires Visual Studio or .NET SDK 10):
+Run from the project root:
 
 ```powershell
-dotnet publish "anime finder.vbproj" -c Release -r win-x64 --self-contained true -o "versions\windows"
+dotnet publish "anime finder.vbproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "versions\windows"
 ```
+
+Output: `versions\windows\BrickBlast.exe` (~142 MB, includes .NET 10 runtime)
+
+---
+
+## Step 2 — Test Before Distribution
+
+- [ ] `BrickBlast.exe` launches without errors on a clean machine or VM
+- [ ] Main menu, Store, Stats, Daily Challenge, and Endless Mode all render
+- [ ] All 10 music tracks play (chiptune cycling)
+- [ ] All 5 SFX packs function
+- [ ] Coin economy: earn coins, open Store, buy a skin, equip it, restart — persists
+- [ ] Power-ups drop and activate correctly
+- [ ] High score saves and survives restart
+- [ ] No UAC prompts (should not require admin)
+- [ ] Dark mode follows system theme on Windows 11
+- [ ] Gamepad connects and controls work (Xbox controller recommended for test)
+
+---
+
+## Step 3 — Distribution Options
+
+### Option A — Direct / itch.io (Recommended for indie release)
+1. Zip the entire `versions\windows\` folder → `BrickBlast-Windows-x64.zip`
+2. Go to https://itch.io/game/new
+3. Upload the zip, set Kind: **Executable**, Platform: **Windows**
+4. Set price, description, screenshots, then publish
+
+### Option B — GitHub Releases
+1. Tag the release: `git tag v1.0.0 && git push origin v1.0.0`
+2. Go to https://github.com/stuffthings15/BrickBlast/releases/new
+3. Select the tag, add release notes, upload `BrickBlast-Windows-x64.zip`
+4. Publish release
+
+### Option C — Windows Store (MSIX)
+See `versions\windows-store\PUBLISHING.md` for the full MSIX packaging and Partner Center submission guide.
 
 ---
 
@@ -40,16 +56,13 @@ dotnet publish "anime finder.vbproj" -c Release -r win-x64 --self-contained true
 
 | File | Purpose |
 |------|---------|
-| `BrickBlast.exe` | Main game executable |
-| `*.dll` | .NET runtime assemblies |
-| `Assets/` | Game assets |
+| `BrickBlast.exe` | Native WinForms game executable (self-contained, ~142 MB) |
+| `Assets/` | Audio (MP3), sprites, and UI images |
+| `RUN_WINDOWS.bat` | Convenience launcher |
 
 ---
 
-## Testing Before Distribute
-
-- [ ] `BrickBlast.exe` launches without errors
-- [ ] Main menu renders correctly
-- [ ] Full gameplay loop works
-- [ ] Save/load persists across restarts
-- [ ] No UAC prompts
+## Notes
+- The EXE is built with `-p:PublishSingleFile=true` so the entire .NET runtime is embedded — no separate installer needed.
+- Save data is written to `%APPDATA%\BrickBlast\` — does not require admin rights.
+- For ARM64 Surface/Copilot+ PCs use `versions\windows-arm64\BrickBlast.exe`.

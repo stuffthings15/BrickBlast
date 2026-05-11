@@ -1,72 +1,73 @@
-#!/bin/bash
-# ============================================
-#   BRICK BLAST - iPad Native Build
-#   Team Fast Talk
-# ============================================
-# Run this script on a Mac with Xcode installed.
+#!/usr/bin/env bash
+# BUILD_IOS.sh — Brick Blast iPad native build
+# Team Fast Talk
+#
+# REQUIREMENTS: macOS 13+, Xcode 15+, Node.js 18+, CocoaPods
+# SOURCE: Syncs canonical game from mobile/www/index.html (built from web/index.html)
+#
+# Usage: cd versions/ipad && bash BUILD_IOS.sh
 
-set -e
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+MOBILE_DIR="$PROJECT_ROOT/mobile"
+CANONICAL_HTML="$PROJECT_ROOT/web/index.html"
 
 echo "============================================"
-echo "  BRICK BLAST - iPad Native Build"
+echo "  BRICK BLAST — iPad Native Build"
 echo "  Team Fast Talk"
 echo "============================================"
 echo ""
 
-# Check for Xcode
-if ! command -v xcodebuild &> /dev/null; then
-    echo "ERROR: Xcode is not installed."
-    echo "Install Xcode from the Mac App Store first."
+# Validate tools
+for tool in xcodebuild npm node pod; do
+    if ! command -v "$tool" &>/dev/null; then
+        echo "ERROR: '$tool' is not installed."
+        case $tool in
+            xcodebuild) echo "  Install Xcode from the Mac App Store." ;;
+            npm|node)   echo "  Install Node.js from https://nodejs.org" ;;
+            pod)        echo "  Run: sudo gem install cocoapods" ;;
+        esac
+        exit 1
+    fi
+done
+
+# Step 1: Sync canonical game source into mobile/www
+echo "Step 1 — Syncing canonical game source..."
+if [ ! -f "$CANONICAL_HTML" ]; then
+    echo "ERROR: Canonical source not found: $CANONICAL_HTML"
     exit 1
 fi
+mkdir -p "$MOBILE_DIR/www"
+cp "$CANONICAL_HTML"                  "$MOBILE_DIR/www/index.html"
+cp "$PROJECT_ROOT/web/manifest.json"  "$MOBILE_DIR/www/manifest.json"
+cp -r "$PROJECT_ROOT/web/icons"       "$MOBILE_DIR/www/icons" 2>/dev/null || true
+echo "  Copied: $CANONICAL_HTML -> mobile/www/index.html"
+echo "  Size: $(wc -c < "$MOBILE_DIR/www/index.html") bytes"
 
-# Install Capacitor npm dependencies (Podfile depends on node_modules)
-if ! command -v npm &> /dev/null; then
-    echo "ERROR: Node.js / npm is not installed."
-    echo "Install from https://nodejs.org and re-run this script."
-    exit 1
-fi
-
-echo "Installing Capacitor npm packages..."
+# Step 2: Install npm packages and sync Capacitor
+echo ""
+echo "Step 2 — Installing Capacitor packages and syncing iOS project..."
+cd "$MOBILE_DIR"
 npm install
-
-# Stage web assets into www/ for cap sync (clean each time to avoid nesting)
-echo "Staging web assets into www/..."
-rm -rf www
-mkdir -p www
-cp index.html www/index.html
-cp manifest.json www/manifest.json
-cp -r icons www/icons
-
-# Sync web assets into the Xcode project (REQUIRED before every build)
-echo "Syncing web assets into Xcode project..."
 npx cap sync ios
 
-# Install CocoaPods if needed
-if ! command -v pod &> /dev/null; then
-    echo "Installing CocoaPods..."
-    sudo gem install cocoapods
-fi
-
-# Install pods (only when Podfile.lock is missing or Podfile has changed)
-echo "Installing CocoaPods dependencies..."
-cd "$SCRIPT_DIR/xcode-project/App"
-if [ ! -f Podfile.lock ] || [ Podfile -nt Podfile.lock ]; then
-    pod install
-else
-    echo "Pods up to date, skipping pod install."
-fi
-
-# Build the app
+# Step 3: Install CocoaPods
 echo ""
-echo "Building for iPad..."
-xcodebuild -workspace App.xcworkspace \
+echo "Step 3 — Installing CocoaPods dependencies..."
+cd "$MOBILE_DIR/ios/App"
+pod install --repo-update
+
+# Step 4: Archive
+echo ""
+echo "Step 4 — Archiving for App Store submission..."
+xcodebuild \
+    -workspace "$MOBILE_DIR/ios/App/App.xcworkspace" \
     -scheme App \
     -configuration Release \
     -destination 'generic/platform=iOS' \
-    -archivePath ./build/BrickBlast.xcarchive \
+    -archivePath "$SCRIPT_DIR/build/BrickBlast-iPad.xcarchive" \
     archive
 
 echo ""
@@ -74,13 +75,12 @@ echo "============================================"
 echo "  BUILD COMPLETE!"
 echo "============================================"
 echo ""
-echo "Archive: xcode-project/App/build/BrickBlast.xcarchive"
+echo "Archive: $SCRIPT_DIR/build/BrickBlast-iPad.xcarchive"
 echo ""
-echo "To install on your iPad:"
-echo "  1. Open BrickBlast.xcarchive in Xcode Organizer"
-echo "  2. Click 'Distribute App' > 'Ad Hoc' or 'Development'"
-echo "  3. Connect iPad and install via Xcode"
+echo "Next steps:"
+echo "  1. Open the archive in Xcode Organizer"
+echo "  2. Distribute App -> App Store Connect -> Upload"
+echo "  OR for Ad Hoc install:"
+echo "  2. Distribute App -> Ad Hoc -> save IPA -> install via Finder"
 echo ""
-echo "Or open the project in Xcode:"
-echo "  open \"$SCRIPT_DIR/xcode-project/App/App.xcworkspace\""
-echo ""
+echo "See PUBLISHING.md for the full App Store submission checklist."

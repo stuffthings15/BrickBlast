@@ -1,4 +1,6 @@
-# Brick Blast — Windows ARM64 Version
+# Brick Blast — Windows ARM64 (Copilot+ / Surface / Snapdragon)
+
+**Team Fast Talk** — Native WinForms build from the canonical VB.NET source.
 
 This folder is fully self-contained. Zip it and share — no install required.
 
@@ -8,35 +10,39 @@ This folder is fully self-contained. Zip it and share — no install required.
 ## Contents
 | File | Purpose |
 |------|---------|
-| `BrickBlast.exe` | Native Windows ARM64 executable |
-| `BrickBlast.pdb` | Debug symbols (optional — can delete) |
-| `RUN_WINDOWS_ARM64.bat` | Shortcut to launch the game |
+| `BrickBlast.exe` | Native Windows ARM64 executable (.NET 10, win-arm64) |
+| `BrickBlast.pdb` | Debug symbols (optional — safe to delete for distribution) |
+| `RUN_WINDOWS_ARM64.bat` | Convenience launcher |
+| `Assets/` | Audio, sprites, and UI images |
+| `PUBLISHING.md` | Distribution guide |
 | `README.md` | This file |
 
 ## Requirements
-- Windows 10 or later on **ARM64** hardware (Surface Pro X, Snapdragon laptops, etc.)
-- No additional software needed — .NET runtime is bundled in the EXE
+- Windows 11 on **ARM64** hardware (Surface Pro X, Surface Pro 11, Snapdragon Elite/X Plus laptops, Copilot+ PCs)
+- Windows 10 ARM64 (version 1903+) also supported
+- No additional software needed — .NET 10 runtime is bundled in the EXE
+- **x64 PC?** Use the `windows/` folder instead
 
 ## Controls
-| Input | Action |
-|-------|--------|
+| Key / Input | Action |
+|-------------|--------|
 | ← → / A D / WASD | Move paddle |
-| SPACE | Start / Resume / Speed boost (2×) |
+| SPACE / Click | Start · Resume · Speed boost (2×) |
 | P / ESC | Pause |
-| F | Speed boost (2×) |
+| F | Speed boost (2×) toggle |
 | H / O | Options menu |
-| Mouse click | Speed up ball (during gameplay) |
-| Gamepad | Full controller support |
+| S | Open Store (from menu) |
+| Gamepad | Full controller support (A=confirm, B=back, Start=options) |
 
 ## Platform
-- **Type:** Native Windows app (WinForms + VB.NET)
-- **Architecture:** ARM64 (native — not emulated x64)
-- **Framework:** .NET 10 (self-contained)
-- **For x64 PCs:** Use the `windows/` folder instead
+- **Type:** Native Windows Forms (VB.NET)
+- **Framework:** .NET 10, self-contained, single-file
+- **Architecture:** arm64 (native — runs without x64 emulation)
+- **Source:** `Form1.vb` + `anime finder.vbproj` at project root
 
 ## Rebuild from Source
-```bat
-dotnet publish "anime finder.vbproj" -c Release -r win-arm64 --self-contained true /p:PublishSingleFile=true -o versions\windows-arm64
+```powershell
+dotnet publish "anime finder.vbproj" -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true -o "versions\windows-arm64"
 ```
 
 ## Features

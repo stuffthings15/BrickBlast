@@ -1,79 +1,93 @@
-# Publishing Guide — iPhone (versions folder)
+# Publishing Guide — iPhone (App Store + IPA)
 
-**Target:** iPhone — Apple App Store via Capacitor + Xcode  
-**The iPhone build shares the same Xcode project as iPad.**
+**Target:** iOS 15.0+ — Apple App Store  
+**Package type:** Capacitor 6 native container wrapping canonical HTML5 game  
+**Source:** `mobile/www/index.html` (must be the canonical ~65 KB version from `web/index.html`)  
+**Build machine required:** macOS 13+ with Xcode 15+
 
 ---
 
-## Quick Start
-
-Run on a Mac with Xcode and Node installed:
+## Step 1 — Sync Canonical Game Source
 
 ```bash
-cd ../ipad
-chmod +x BUILD_IOS.sh
-./BUILD_IOS.sh
+# From project root
+cp web/index.html    mobile/www/index.html
+cp web/manifest.json mobile/www/manifest.json
+cp -r web/icons      mobile/www/icons
 ```
 
-The archive produced targets `generic/platform=iOS`, which covers both iPhone and iPad.
+Verify: `mobile/www/index.html` should be **~65 KB** and include the store, sound, and all power-ups.
 
 ---
 
-## Making the Build Universal (iPhone + iPad)
+## Step 2 — Install Dependencies and Sync Capacitor
 
-1. Open `../ipad/xcode-project/App/App.xcworkspace` in Xcode
-2. Click the **App** target → **General** tab
-3. Under **Deployment Info**, ensure **iPhone** and **iPad** are both checked
-4. Set minimum deployment: **iOS 13.0**
-
-One archive → one IPA → distributes to all iOS devices.
-
----
-
-## Screenshot Requirements for iPhone
-
-Apple requires screenshots at these sizes for App Store:
-
-| Size | Device example |
-|------|---------------|
-| 6.7" (1290×2796) | iPhone 15 Pro Max |
-| 6.5" (1242×2688) | iPhone 11 Pro Max |
-| 5.5" (1242×2208) | iPhone 8 Plus |
-
-Tip: Use Xcode Simulator at the required device size and take screenshots there.
+```bash
+cd mobile
+npm install
+npx cap sync ios
+cd ios/App
+pod install
+```
 
 ---
 
-## Distribution Options
+## Step 3 — Configure Signing in Xcode
 
-| Method | Use Case |
-|--------|----------|
-| App Store Connect | Public release via App Store |
-| TestFlight | Beta testing (up to 10,000 testers) |
-| Ad Hoc | Up to 100 registered UDIDs |
-| Development | Registered team devices only |
+1. Open `mobile/ios/App/App.xcworkspace` in Xcode
+2. Select the **App** target → **Signing & Capabilities**
+3. Set your **Team** and **Bundle Identifier** (`com.teamfasttalk.brickblast`)
+4. Ensure a valid **Distribution Certificate** and **Provisioning Profile** are configured
 
 ---
 
-## App Store Submission Quick Reference
+## Step 4 — Archive and Export IPA
 
-For full steps, see `../../Final Version Releases/iphone/PUBLISHING.md`.
+### Option A — Xcode UI
+1. **Product → Archive**
+2. In Organizer: **Distribute App → App Store Connect → Upload**
 
-| Field | Value |
-|-------|-------|
-| Bundle ID | `com.teamfasttalk.brickblast` |
-| Version | 1.0.0 |
-| Category | Games → Arcade |
-| Age Rating | 4+ |
-| Price | Free |
+### Option B — Command line
+```bash
+xcodebuild -workspace mobile/ios/App/App.xcworkspace \
+           -scheme App \
+           -configuration Release \
+           -archivePath build/BrickBlast.xcarchive \
+           archive
+xcodebuild -exportArchive \
+           -archivePath build/BrickBlast.xcarchive \
+           -exportPath build/BrickBlast-iPhone \
+           -exportOptionsPlist ExportOptions.plist
+```
 
 ---
 
-## Troubleshooting
+## Step 5 — Test Before Submission
 
-| Problem | Fix |
-|---------|-----|
-| Build error: no signing | Set team in Xcode → Signing & Capabilities |
-| App crashes on launch | Check WebView URL in `capacitor.config.json` |
-| Icons missing | Run `npx cap sync ios` from `../ipad/` |
-| Landscape locks in portrait | Set orientation in `capacitor.config.json` ios section |
+- [ ] App installs on iOS 15.0+ device or simulator
+- [ ] Launches; canvas fills iPhone viewport in portrait and landscape
+- [ ] Store, music, power-ups, and saves all work
+- [ ] Daily Challenge and Endless Mode accessible
+- [ ] Touch controls work; swipe-back gesture handled cleanly
+- [ ] Works fully offline
+
+---
+
+## Step 6 — Submit to App Store Connect
+
+1. Log in to [App Store Connect](https://appstoreconnect.apple.com)
+2. Create or select the App with bundle ID `com.teamfasttalk.brickblast`
+3. Upload the IPA via Xcode Organizer or Transporter
+4. Fill out listing: name, description, screenshots (iPhone 6.7"), age rating, keywords
+5. Submit for review
+
+See `APP_STORE_GUIDE.md` for the full listing checklist and screenshot requirements.
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `BUILD_IOS.sh` | Automated build script (runs steps 1–4) |
+| `APP_STORE_GUIDE.md` | Full App Store Connect submission checklist |

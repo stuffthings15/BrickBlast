@@ -1,4 +1,6 @@
-# Brick Blast — Windows Store Version
+# Brick Blast — Windows Store (MSIX)
+
+**Team Fast Talk** — Native WinForms, packaged as MSIX for Microsoft Store and sideloading.
 
 ## Requirements
 - Windows 10 version 1903 or later (x64 or ARM64)
@@ -7,17 +9,19 @@
 ## Contents
 | File | Purpose |
 |------|---------|
-| `BrickBlast.msixbundle` | **Upload to Partner Center** — covers x64 + ARM64 |
-| `BrickBlast-x64.msix` | Standalone x64 (sideload / direct install) |
-| `BrickBlast-arm64.msix` | Standalone ARM64 (sideload / direct install) |
-| `BrickBlast.pfx` | Self-signed cert (dev/sideload only) |
-| `RUN_WINDOWS_STORE.bat` | Launcher / install helper |
+| `BrickBlast.msixbundle` | **Upload to Partner Center** — covers x64 + ARM64 in one package |
+| `BrickBlast-x64.msix` | Standalone x64 MSIX (sideload / direct install) |
+| `BrickBlast-arm64.msix` | Standalone ARM64 MSIX (sideload / direct install) |
+| `BrickBlast.pfx` | Self-signed cert (dev/sideload only — Partner Center replaces this) |
+| `RUN_WINDOWS_STORE.bat` | Convenience launcher |
+| `PUBLISHING.md` | Full Partner Center submission guide |
 | `README.md` | This file |
 
 ## Install (Sideload — No Store Needed)
 1. Double-click `BrickBlast.pfx` → install to **Local Machine → Trusted Root**
-2. Double-click `BrickBlast-x64.msix` (or `arm64` on ARM devices)
+2. Double-click `BrickBlast-x64.msix` (or `BrickBlast-arm64.msix` on ARM devices)
 3. Click **Install**
+
 
 ## Controls
 | Input | Action |

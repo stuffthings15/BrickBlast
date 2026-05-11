@@ -1,4 +1,6 @@
-# Brick Blast — Windows Desktop Version
+# Brick Blast — Windows Desktop (x64)
+
+**Team Fast Talk** — Native WinForms build from the canonical VB.NET source.
 
 ## How to Run
 **Double-click `RUN_WINDOWS.bat`** or run `BrickBlast.exe` directly.
@@ -6,34 +8,41 @@
 This folder is fully self-contained. Zip it and share — no install required.
 
 ## Contents
-- `BrickBlast.exe` — Self-contained executable (no .NET install needed)
-- `RUN_WINDOWS.bat` — Shortcut to launch the game
-- `README.md` — This file
+| File | Purpose |
+|------|---------|
+| `BrickBlast.exe` | Self-contained native WinForms executable (.NET 10, win-x64) |
+| `RUN_WINDOWS.bat` | Shortcut to launch the game |
+| `Assets/` | Audio, sprites, and UI images used by the game |
+| `PUBLISHING.md` | Distribution and store submission guide |
+| `README.md` | This file |
 
 ## Requirements
-- Windows 10 or later (64-bit)
-- No additional software needed — .NET runtime is bundled in the EXE
+- Windows 10 version 1903 or later (64-bit x64)
+- No additional software needed — .NET 10 runtime is bundled in the EXE
 
 ## Controls
-| Key | Action |
-|-----|--------|
-| ← → / A D | Move paddle |
-| SPACE | Start / Resume / Speed boost (2x) |
+| Key / Input | Action |
+|-------------|--------|
+| ← → / A D / WASD | Move paddle |
+| SPACE / Click | Start · Resume · Speed boost (2×) |
 | P / ESC | Pause |
-| F | Speed boost (2x) |
+| F | Speed boost (2×) toggle |
 | H / O | Options menu |
-| Mouse click | Speed up ball (during gameplay) |
+| S | Open Store (from menu) |
+| Gamepad | Full controller support (A=confirm, B=back, Start=options) |
 
 ## Platform
 - **Type:** Native Windows Forms (VB.NET)
-- **Source:** `Form1.vb` in project root
+- **Framework:** .NET 10, self-contained, single-file
+- **Architecture:** x64 (Intel / AMD 64-bit)
+- **Source:** `Form1.vb` + `anime finder.vbproj` at project root
+- **For ARM64 Surface/Copilot+ PCs:** Use the `windows-arm64/` folder instead
 
-## Build EXE Yourself
-If `BrickBlast.exe` is not present, build it from the project root:
+## Rebuild from Source
+Run from the project root (requires .NET 10 SDK):
+```powershell
+dotnet publish "anime finder.vbproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "versions\windows"
 ```
-dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o versions\windows
-```
-Then rename `anime finder.exe` to `BrickBlast.exe`.
 
 ## Features
 - 🧱 **Brick layouts** — 8 patterns that rotate across levels

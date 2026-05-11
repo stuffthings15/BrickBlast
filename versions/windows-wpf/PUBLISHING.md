@@ -1,50 +1,50 @@
-# Publishing Guide — Windows WPF (versions folder)
+# Publishing Guide — Windows WPF
 
-**Target:** Windows 10/11 — WPF wrapper around the game  
-**Status:** 🔧 Sub-project — only edit when user explicitly targets WPF
-
----
-
-## What's in This Folder
-
-| File | Purpose |
-|------|---------|
-| `*.exe` | WPF application executable |
-| `*.dll` | .NET runtime and WPF assemblies |
-| `Assets/` | Game assets |
+**Target:** Windows 10/11 (x64) — WPF sub-project  
+**Source:** `anime finder wpf\anime finder wpf.csproj`  
+**⚠️ Sub-project:** The canonical game is WinForms (`Form1.vb`). Only build and distribute this if explicitly targeting the WPF variant.
 
 ---
 
-## Important Note
+## Step 1 — Rebuild
 
-The **canonical game** lives in `Form1.vb` (WinForms). The WPF version in `anime finder wpf/` is a separate sub-project. Do not confuse them.
-
-Only rebuild and distribute this version if the user explicitly asks for the WPF release.
-
----
-
-## Rebuild
-
-From the WPF project directory:
+From the project root:
 
 ```powershell
-dotnet publish "anime finder wpf\anime finder wpf.csproj" -c Release -r win-x64 --self-contained true -o "versions\windows-wpf"
+dotnet publish "anime finder wpf\anime finder wpf.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "versions\windows-wpf"
 ```
 
 ---
 
-## Distribute
+## Step 2 — Test Before Distribution
 
-| Channel | Steps |
-|---------|-------|
-| itch.io | `butler push . teamfasttalk/brickblast:windows-wpf --userversion 1.0.0` |
-| GitHub Releases | Zip and upload as supplementary release asset |
+- [ ] `BrickBlast.exe` launches without errors
+- [ ] Game renders correctly (WPF DrawingContext, not GDI+)
+- [ ] Store, music, power-ups, and save all function identically to WinForms build
+- [ ] No external runtime dependencies
+- [ ] Verified as WPF process (not the WinForms canonical build)
 
 ---
 
-## Testing Before Publish
+## Step 3 — Distribute
 
-- [ ] Launches on Windows 10/11 x64
-- [ ] Game renders correctly in WPF WebView/host
-- [ ] No dependency on external runtimes
-- [ ] Verified as WPF build, not WinForms canonical build
+| Channel | Steps |
+|---------|-------|
+| itch.io | Zip folder → upload as alternate Windows download, tagged "WPF" |
+| GitHub Releases | Attach `BrickBlast-Windows-WPF.zip` to release, clearly labelled |
+
+---
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `BrickBlast.exe` | WPF game executable (self-contained, .NET 10, win-x64) |
+| `BrickBlast.pdb` | Debug symbols (safe to delete for distribution) |
+| `RUN_WINDOWS_WPF.bat` | Convenience launcher |
+
+---
+
+## Notes
+- Prefer distributing the WinForms build (`versions\windows\`) for the primary Windows release.
+- This WPF build is provided as an alternative for users who experience issues with WinForms rendering.
