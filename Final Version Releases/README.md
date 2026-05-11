@@ -85,26 +85,26 @@ Final Version Releases/
 
 | Target | How to Build / Ship |
 |--------|---------------------|
-| **Windows x64** | Ready — run `windows-x64\BrickBlast.exe` |
-| **Windows ARM64** | Ready — run `windows-arm64\BrickBlast.exe` |
-| **Windows Store (MSIX)** | Open VS Dev Prompt → `cd windows-store` → `.\Build-MSIX.ps1` → upload to Partner Center |
-| **Win32 Assembly** | Open x86 VS Dev Prompt → `cd assembly` → `Build-Assembly.bat` |
-| **HTML / Browser** | Upload `html/` folder contents to any static host |
-| **itch.io** | Install Butler → `bash itch.io/push-itchio.sh` |
-| **React web** | `cd react && npm install && npm run build` → deploy `build/` |
-| **React Native** | See `react-native/package.json`; requires Android Studio / Xcode |
-| **Android Phone/Tablet** | `cd mobile-capacitor && npm i && npx cap add android && npx cap sync` → Android Studio |
-| **iPhone / iPad** | `cd mobile-capacitor && npx cap add ios && npx cap sync` → Xcode (macOS only) |
-| **Google Play Store** | Build signed AAB from Android Studio → upload to Play Console |
-| **Apple App Store** | Archive from Xcode → App Store Connect |
-| **Electron Windows** | `cd electron-windows && npm i && npm run build` → produces NSIS `.exe` |
-| **Electron Linux x64** | `cd electron-linux && npm i && npm run build` → produces `.AppImage` |
-| **Electron Linux ARM64** | Same as above; ARM64 target included in `package.json` |
-| **Electron macOS** | `cd electron-macos && npm i && npm run build` → produces `.dmg` |
-| **Linux native x64** | Copy `linux-x64/` to target machine → `bash BrickBlast.sh` |
-| **Linux native ARM64** | Copy `linux-arm64/` to target machine → `bash BrickBlast.sh` |
-| **macOS native** | Copy `macos/` → `bash BrickBlast.sh` (or open `.app` after signing) |
-| **macOS Apple Silicon** | Copy `macos-arm64/` → `bash BrickBlast.sh` |
+| **Windows x64** | ✅ BUILT — run `windows-x64\BrickBlast.exe` |
+| **Windows ARM64** | ✅ BUILT — run `windows-arm64\BrickBlast.exe` |
+| **Windows Store (MSIX)** | ✅ BUILT — `windows-store\BrickBlast.msix` ready for Partner Center upload |
+| **Win32 Assembly** | ✅ BUILT — `assembly\BrickBlast-Launcher.exe` (2.5 KB pure x64 ASM) |
+| **Electron Windows** | ✅ BUILT — `electron-windows\dist\BrickBlast Velocity Market Setup 1.0.0.exe` |
+| **Electron Linux x64** | ✅ BUILT — `linux-x64\BrickBlast-Linux-x64.zip` |
+| **Electron Linux ARM64** | ✅ BUILT — `linux-arm64\BrickBlast-Linux-arm64.zip` |
+| **React web** | ✅ BUILT — `react\build\` ready to deploy |
+| **HTML / Browser** | ✅ READY — upload `html/` to any static host |
+| **itch.io** | ✅ READY — install Butler → `bash itch.io/push-itchio.sh` |
+| **Linux native x64** | ✅ READY — copy `linux-x64/` to Linux machine → `bash BrickBlast.sh` |
+| **Linux native ARM64** | ✅ READY — copy `linux-arm64/` to Linux machine → `bash BrickBlast.sh` |
+| **React Native** | 📋 STAGED — requires Android Studio / Xcode for native build |
+| **Android Phone/Tablet** | 🔒 NEEDS Android Studio — `mobile-capacitor/` → `npx cap add android` |
+| **iPhone / iPad** | 🔒 NEEDS Mac + Xcode — `versions/ipad/xcode-project/` ready to build |
+| **Google Play Store** | 🔒 NEEDS Android Studio — build signed AAB → Play Console |
+| **Apple App Store** | 🔒 NEEDS Mac + Xcode — archive → App Store Connect |
+| **Electron macOS** | 🔒 NEEDS macOS host — `cd electron-macos && npm run build` → DMG |
+| **macOS native** | 🔒 NEEDS macOS — copy `macos/` → `bash BrickBlast.sh` |
+| **macOS Apple Silicon** | 🔒 NEEDS macOS — copy `macos-arm64/` → `bash BrickBlast.sh` |
 
 ---
 
