@@ -32,8 +32,9 @@ fi
 echo "Installing Capacitor npm packages..."
 npm install
 
-# Stage web assets into www/ for cap sync
+# Stage web assets into www/ for cap sync (clean each time to avoid nesting)
 echo "Staging web assets into www/..."
+rm -rf www
 mkdir -p www
 cp index.html www/index.html
 cp manifest.json www/manifest.json
@@ -49,10 +50,14 @@ if ! command -v pod &> /dev/null; then
     sudo gem install cocoapods
 fi
 
-# Install pods
+# Install pods (only when Podfile.lock is missing or Podfile has changed)
 echo "Installing CocoaPods dependencies..."
 cd "$SCRIPT_DIR/xcode-project/App"
-pod install
+if [ ! -f Podfile.lock ] || [ Podfile -nt Podfile.lock ]; then
+    pod install
+else
+    echo "Pods up to date, skipping pod install."
+fi
 
 # Build the app
 echo ""
