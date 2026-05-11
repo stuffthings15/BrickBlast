@@ -17,3 +17,6 @@ pipelines/exe/BrickBlast_Submit.zip filter=lfs diff=lfs merge=lfs -text
 *.so filter=lfs diff=lfs merge=lfs -text
 Final[[:space:]]Version[[:space:]]Releases/linux-x64/BrickBlast filter=lfs diff=lfs merge=lfs -text
 Final[[:space:]]Version[[:space:]]Releases/linux-arm64/BrickBlast filter=lfs diff=lfs merge=lfs -text
+Final[[:space:]]Version[[:space:]]Releases/linux-x64/libSkiaSharp.so filter=lfs diff=lfs merge=lfs -text
+Final[[:space:]]Version[[:space:]]Releases/linux-x64/libHarfBuzzSharp.so filter=lfs diff=lfs merge=lfs -text
+Final[[:space:]]Version[[:space:]]Releases/linux-x64/anime[[:space:]]finder[[:space:]]macos filter=lfs diff=lfs merge=lfs -text
