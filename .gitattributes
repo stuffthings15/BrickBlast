@@ -20,3 +20,5 @@ Final[[:space:]]Version[[:space:]]Releases/linux-arm64/BrickBlast filter=lfs dif
 Final[[:space:]]Version[[:space:]]Releases/linux-x64/libSkiaSharp.so filter=lfs diff=lfs merge=lfs -text
 Final[[:space:]]Version[[:space:]]Releases/linux-x64/libHarfBuzzSharp.so filter=lfs diff=lfs merge=lfs -text
 Final[[:space:]]Version[[:space:]]Releases/linux-x64/anime[[:space:]]finder[[:space:]]macos filter=lfs diff=lfs merge=lfs -text
+Final[[:space:]]Version[[:space:]]Releases/assembly/BrickBlast-Launcher.exe filter=lfs diff=lfs merge=lfs -text
+Final[[:space:]]Version[[:space:]]Releases/assembly/BrickBlast.exe filter=lfs diff=lfs merge=lfs -text

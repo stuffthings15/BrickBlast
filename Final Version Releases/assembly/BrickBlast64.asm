@@ -15,9 +15,9 @@ EXTERN ExitProcess:PROC
 EXTERN MessageBoxA:PROC
 
 .data
-    szExe   db "..\\windows-x64\\BrickBlast.exe", 0
+    szExe   db "BrickBlast.exe", 0
     szOpen  db "open", 0
-    szDir   db "..\\windows-x64", 0
+    szDir   db ".", 0
     szErr   db "Cannot find BrickBlast.exe.", 0
     szTtl   db "BrickBlast Launcher", 0
 

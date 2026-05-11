@@ -31,8 +31,8 @@ includelib shell32.lib
 .data
     ; Relative path to the CLR-built executable.
     ; Place this launcher one level above the windows-x64 folder, or adjust as needed.
-    exePath     db "..\\windows-x64\\BrickBlast.exe", 0
-    workDir     db "..\\windows-x64", 0
+    exePath     db "BrickBlast.exe", 0
+    workDir     db ".", 0
     szOpen      db "open", 0
     szError     db "Cannot find BrickBlast.exe.", 0
     szTitle     db "BrickBlast Launcher", 0
