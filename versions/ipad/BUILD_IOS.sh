@@ -6,7 +6,8 @@
 # Run this script on a Mac with Xcode installed.
 
 set -e
-cd "$(dirname "$0")/xcode-project/App"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 echo "============================================"
 echo "  BRICK BLAST - iPad Native Build"
@@ -21,6 +22,16 @@ if ! command -v xcodebuild &> /dev/null; then
     exit 1
 fi
 
+# Install Capacitor npm dependencies (Podfile depends on node_modules)
+if ! command -v npm &> /dev/null; then
+    echo "ERROR: Node.js / npm is not installed."
+    echo "Install from https://nodejs.org and re-run this script."
+    exit 1
+fi
+
+echo "Installing Capacitor npm packages..."
+npm install
+
 # Install CocoaPods if needed
 if ! command -v pod &> /dev/null; then
     echo "Installing CocoaPods..."
@@ -28,7 +39,8 @@ if ! command -v pod &> /dev/null; then
 fi
 
 # Install pods
-echo "Installing dependencies..."
+echo "Installing CocoaPods dependencies..."
+cd "$SCRIPT_DIR/xcode-project/App"
 pod install 2>/dev/null || echo "Note: pod install had warnings (this is usually OK)"
 
 # Build the app
