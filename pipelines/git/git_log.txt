@@ -1,0 +1,65 @@
+454a11c docs: add PUBLISHING.md to updated versions/, dist/, and pipelines/ folders (14 files)
+62ed563 docs: add TRAILER_TODO.md — final remaining manual step guide
+9e72b07 docs: add missing PUBLISHING.md to remaining versions/ folders
+a7dc5d1 docs: add PUBLISHING.md to every release folder + root master publishing overview
+7f30ab9 ipad: fix www/ nesting on rebuild, skip pod install when pods are current
+30d698f ipad: add root capacitor.config.json, stage www/ in build script, fix cap sync flow
+b03dccb ipad: add package.json for Capacitor deps, fix webDir to public, fix build script npm install step
+98459d8 releases: React built, Linux zips (LFS), itch.io script, README status updated
+27cfa0b ipad: clean up duplicate/stray folders in public and PWA root
+17ee8c1 ipad: fix manifest icons, add apple-touch-icon tags, sync Xcode public folder
+0cca488 sync: update iPad Xcode public + PWA root with latest canonical web build
+e066fd3 RELEASE: Assembly launcher built + Windows Store MSIX + Electron Win/Linux distributables
+ccc2c24 docs: add README to every release folder — full coverage across all 20 targets
+1a7603b release: populate android-phone, android-tablet, iphone, ipad folders with game assets and READMEs
+c9178ed release: consolidate React entry, add itch.io README and Windows Store signing guide
+305ca7f release: complete React, React Native, and iOS asset wiring
+837262e release: complete Final Version Releases matrix (all platforms + README)
+c281ea8 Fix high score null handling and publish Windows executable
+0cd0da2 docs: add Features section to all 6 native version READMEs
+3384b70 fix: reset sessionCoins on new game; sync HTML to all browser copies; add Features section to all browser READMEs
+edc9188 feat: add store, economy, skins, GameOver/Credits/Stats screens to all browser versions
+6a596bc uniformity: fix macos README, add Controls sections to iphone/ipad/windows-store, sync web/index.html title
+e08cf64 uniformity: add missing READMEs, RUN launchers, icons to all version folders
+1b41fb8 sync: copy assets into iphone/ipad xcode public dirs, add PLAY_STORE_GUIDE to android-tablet, untrack public from xcode gitignore
+f199f9d rebuild all platforms: html/js fully updated (10 music tracks, 5 sfx styles, all powerups, colorblind, 8 level patterns, gamepad, mobile touch, combo, screen shake); synced to android-phone, android-tablet, iphone, ipad, linux; rebuilt windows x64/arm64/store binaries
+991a07b release: rebuild all platform versions (win-x64, win-arm64, win-wpf, macos-x64, macos-arm64)
+40e7496 release: refresh windows x64 and arm64 executables + flatten asset tree
+53e9fec feat: complete ten-feature expansion + UI/sync polish
+7d10d3a Fix: apply equipped store assets in-game (brick palette, ball skin, bon
+bdba45c Fix music playback: replace MCI with WinRT MediaPlayer, lower default SFX volume 30%
+f4337b7 docs: update README, RELEASE_NOTES, versions/README to reflect v1.4.0 state (ARM64, macOS, Linux, MSIX, MP3 soundtrack, correct build commands)
+16d1552 fix: zero compiler warnings, remove dead MusicXML file, fix MSIX asset-collision on publish, rebuild x64+ARM64+MSIX bundle
+513d804 feat: Windows Store MSIX bundle (x64+ARM64), store submission guides for all 3 platforms, bump Android versionCode to 2
+382835f feat: add MP3 soundtrack to WPF and Linux builds
+4f3b415 feat: new MP3 soundtrack, Windows ARM64 release, macOS audio + Tmds.DBus.Protocol security fix
+0fa3e17 Native builds: Android APK/AAB, Windows EXE, macOS (Intel+ARM), Linux; fix LUFFYISKING dev-password leak; macOS Avalonia VB port (zero errors); add Git LFS for binaries
+0161df1 fix: resolve HUD text overlap across all versions - Form1.vb: SCORE/LEVEL/LIVES on row-1 (y=12); speed/ball status, COINS,   and paddle timer separated onto row-2 (y=34) in left/centre/right zones - web + all 6 version index.html files: same 2-row layout; LEVEL centred   on its own y=28 row; coins/status items moved to y=44, each in its own   horizontal zone so nothing overlaps
+af34c70 feat: add Linux version distribution folder
+2e324f9 v1.0.0-final — All checklist items closed
+af0129f v1.0.0 — BrickBlast: Velocity Market final su
+9ee7493 release: rebuild all executables — WinForms 110.8MB, WPF 133.4MB (net10 win-x64 self-contained)
+e8a9cd0 feat: add canvas drawHeart for HUD lives in HTML/mobile versions
+9078ca4 release: mirror main WinForms app to all windows versions via Git LFS
+996d650 chore: add GDD_FORM doc and sync versions after heart-icon update
+60e32be feat: add procedural heart icons for HUD lives and extra-life power-up
+1f1d546 Build: add AssemblyName=BrickBlast to WinForms project, rebuild windows + windows-wpf self-contained executables (110.8 MB / 125.5 MB) with melody-only music
+f1d211e Music: melody-only MIDI (remove bass+harmony tracks), bump cache v4, strip copyright names from comments and style labels
+d866ee1 Complete music rewrite from MusicXML ref (10 styles: MegaManWily/Zelda/Tetris/Mario/Castlevania/FF/Sonic/Metroid/MegaElec/ZeldaDungeon), fix options text overlap (y+=28, settingsY=py+373), add XInput gamepad (D-pad/stick/ABXY/Start/shoulders), add touch/mouse paddle drag
+e8a7c03 Fix double music: cancel pending timers in StartMusic/StartMusicDirect/StartHighScoreMusic before playing; Fix yellow background: always use solid dark fill (8,8,20) instead of yellow-tinted sprite textures
+4e7165b Fix yellow contrast on black bg: brighten all yellows (255,255,120), add shadows to all HUD text, stronger combo/getready outlines, cache powerup fonts, guaranteed dark fill fallback
+7c7d7aa Perf: cache 17 fonts + NearestNeighbor, contrast: text shadows + combo dark panel, Alt+Enter maximize, menu leaderboard, use 15+ unused sprites (text_start/options/resume, key icons, slider, music/sound icons, gem, brick_gold, paddle_hd)
+a909fe5 Improve music: add 3rd harmony/pad track, fix WPF BPM bug, bump cache to v3 for clean regeneration
+e574e0f Integrate remaining WPF assets into WinForms app; fix music tempo; add backgrounds, HUD icons, text sprites, overlays
+7c5fa19 v1.1 — WPF port, updated docs, multi-platform release
+8d2e4cb Fix cross-platform compatibility + rebuild all executables Bugs fixed across all HTML-based platforms (5 of 6): - viewport-fit=cover for notched iPhone/iPad displays - Mobile name input: prompt() dialog on High Score screen (touch users) - Mouse/touch click now speeds up ball during gameplay (matches VB.NET) - Gamepad A button works on High Score screen (auto-saves as PLAYER) - Menu text corrected from WASD to A D (W/S not mapped) - Click-to-speed-up-ball behavior synced with VB.NET version All executables rebuilt fresh: - Windows: BrickBlast.exe 110.8MB (self-contained .NET) - Android: BrickBlast-Android.apk 3.6MB (Capacitor/Gradle) - HTML/PWA: index.html 39KB synced to all 5 web platforms - Xcode projects updated with fixed index.html Dist zips created locally in dist/ for distribution
+2a18319 Add native iOS Xcode projects for iPhone and iPad - iPhone: xcode-project/ with landscape-only orientation - iPad: xcode-project/ with all orientations supported - Both include BUILD_IOS.sh (Mac) and BUILD_IOS.bat (instructions) - Capacitor 6 + Swift, bundle ID com.teamfasttalk.brickblast - Game HTML embedded in xcode-project/App/App/public/ - Copy folder to Mac, run pod install, open .xcworkspace, build
+a17c9b4 Make each version folder fully self-contained and independent - Windows: BrickBlast.exe + RUN_WINDOWS.bat (auto-builds if EXE missing) - HTML: index.html + manifest.json + RUN_HTML.bat - Android Phone: BrickBlast-Android.apk + index.html + manifest.json - Android Tablet: BrickBlast-Android.apk + index.html + manifest.json - iPhone: index.html + manifest.json + icons/ + RUN_IPHONE.bat - iPad: index.html + manifest.json + icons/ + RUN_IPAD.bat - Each folder can be zipped and shared independently - Removed old zip artifacts, all files are directly in folders
+583d900 Add all platform builds - Windows EXE, Android APK, HTML/PWA zips - versions/windows/BrickBlast-Windows.zip (45 MB self-contained EXE) - versions/android-phone/BrickBlast-Android.apk (3.6 MB Capacitor APK) - versions/android-tablet/BrickBlast-Android.apk (same APK) - versions/html/BrickBlast-HTML.zip (web version) - versions/iphone/BrickBlast-PWA.zip (PWA for Safari) - versions/ipad/BrickBlast-PWA.zip (PWA for Safari)
+f85618a Add platform versions, mobile builds, sync HTML game code - Add versions/ folder with launchers for Windows, HTML, Android Phone/Tablet, iPhone, iPad - Add Capacitor Android project in mobile/ for native APK builds - Sync web/index.html to mobile assets - Add node_modules to .gitignore
+8fe33b1 Add root redirect for GitHub Pages
+6d59ed8 Add web port - playable on iPhone/Android via browser
+0cb6839 Fix ball stuck on paddle, multi-ball deletion bug, add double buffering, click-to-speed
+9519194 Rename title to Team Fast Talk
+9918ba5 Add GDD and 20-person team production document
+e1b3642 Curtis Loop Brick Blast - final submission
