@@ -32,6 +32,17 @@ fi
 echo "Installing Capacitor npm packages..."
 npm install
 
+# Stage web assets into www/ for cap sync
+echo "Staging web assets into www/..."
+mkdir -p www
+cp index.html www/index.html
+cp manifest.json www/manifest.json
+cp -r icons www/icons
+
+# Sync web assets into the Xcode project (REQUIRED before every build)
+echo "Syncing web assets into Xcode project..."
+npx cap sync ios
+
 # Install CocoaPods if needed
 if ! command -v pod &> /dev/null; then
     echo "Installing CocoaPods..."
@@ -41,7 +52,7 @@ fi
 # Install pods
 echo "Installing CocoaPods dependencies..."
 cd "$SCRIPT_DIR/xcode-project/App"
-pod install 2>/dev/null || echo "Note: pod install had warnings (this is usually OK)"
+pod install
 
 # Build the app
 echo ""
@@ -66,5 +77,5 @@ echo "  2. Click 'Distribute App' > 'Ad Hoc' or 'Development'"
 echo "  3. Connect iPad and install via Xcode"
 echo ""
 echo "Or open the project in Xcode:"
-echo "  open xcode-project/App/App.xcworkspace"
+echo "  open \"$SCRIPT_DIR/xcode-project/App/App.xcworkspace\""
 echo ""

@@ -1,0 +1,35 @@
+{
+  "appId": "com.teamfasttalk.brickblast",
+  "appName": "Brick Blast",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#000014",
+      "showSpinner": false,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 300
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#000014"
+    },
+    "Keyboard": {
+      "resize": "none"
+    },
+    "ScreenOrientation": {
+      "orientation": "landscape"
+    }
+  },
+  "ios": {
+    "backgroundColor": "#000014",
+    "contentInset": "always",
+    "preferredContentMode": "mobile",
+    "scheme": "Brick Blast",
+    "limitsNavigationsToAppBoundDomains": true,
+    "path": "xcode-project/App"
+  }
+}
