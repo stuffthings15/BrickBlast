@@ -651,7 +651,7 @@ Public Class Form1
                         ChangeMusic()
                     End If
                     If _settingsSelection = 3 Then
-                        _musicStyle = (_musicStyle - 1 + 10) Mod 10
+                        _musicStyle = (_musicStyle - 1 + _musicStyleNames.Length) Mod _musicStyleNames.Length
                         ChangeMusic()
                     End If
                     If _settingsSelection = 4 Then _sfxStyle = (_sfxStyle - 1 + 5) Mod 5
@@ -668,7 +668,7 @@ Public Class Form1
                         ChangeMusic()
                     End If
                     If _settingsSelection = 3 Then
-                        _musicStyle = (_musicStyle + 1) Mod 10
+                        _musicStyle = (_musicStyle + 1) Mod _musicStyleNames.Length
                         ChangeMusic()
                     End If
                     If _settingsSelection = 4 Then _sfxStyle = (_sfxStyle + 1) Mod 5
@@ -1084,7 +1084,7 @@ Public Class Form1
                 _musicSpeed = Math.Max(10, _musicSpeed - 5)
                 RegenerateCurrentMusicFile()
                 ChangeMusic()
-            Case 3 : _musicStyle = (_musicStyle - 1 + 10) Mod 10 : ChangeMusic()
+            Case 3 : _musicStyle = (_musicStyle - 1 + _musicStyleNames.Length) Mod _musicStyleNames.Length : ChangeMusic()
             Case 4 : _sfxStyle = (_sfxStyle - 1 + 5) Mod 5
             Case 5 : _colorblindMode = Not _colorblindMode
             Case 6 : _windowScale = (_windowScale - 1 + _windowScaleSizes.Length) Mod _windowScaleSizes.Length : ApplyWindowScale()
@@ -1099,7 +1099,7 @@ Public Class Form1
                 _musicSpeed = Math.Min(200, _musicSpeed + 5)
                 RegenerateCurrentMusicFile()
                 ChangeMusic()
-            Case 3 : _musicStyle = (_musicStyle + 1) Mod 10 : ChangeMusic()
+            Case 3 : _musicStyle = (_musicStyle + 1) Mod _musicStyleNames.Length : ChangeMusic()
             Case 4 : _sfxStyle = (_sfxStyle + 1) Mod 5
             Case 5 : _colorblindMode = Not _colorblindMode
             Case 6 : _windowScale = (_windowScale + 1) Mod _windowScaleSizes.Length : ApplyWindowScale()

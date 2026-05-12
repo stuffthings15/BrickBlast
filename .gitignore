@@ -3,28 +3,78 @@ obj/
 .vs/
 *.user
 publish/
+dist/
 
 *.tmp
 *.log
+
+# Node
 node_modules/
 mobile/node_modules/
+
+# Mobile build artifacts
 mobile/android/local.properties
 mobile/android/app/build/
 mobile/android/.gradle/
 mobile/android/build/
 mobile/android/capacitor-cordova-android-plugins/build/
 mobile/android/capacitor-cordova-android-plugins/.gradle/
-versions/windows/build/
-versions/windows/build-portable/
-versions/windows/BrickBlast.exe
-versions/windows/BrickBlast.pdb
-versions/windows-wpf/build/
-versions/windows-wpf/BrickBlast.exe
-versions/windows-wpf/BrickBlast.pdb
-versions/windows-wpf/*.dll
 mobile/ios/
-dist/
 
+# Debug symbols (not needed in distribution)
+**/*.pdb
+
+# MSIX staging dirs and built installers (regenerable)
+msix/
 msix/stage_x64/
 msix/stage_arm64/
 msix/bundle_stage/
+
+# Sub-project build output
+anime finder macos/bin/
+anime finder macos/obj/
+anime finder wpf/bin/
+anime finder wpf/obj/
+
+# Duplicate distribution trees (canonical copy is Final Version Releases/)
+versions/windows/
+versions/windows-store/
+versions/windows-arm64/
+versions/windows-wpf/
+versions/macos/
+versions/macos-arm64/
+versions/linux/
+updated versions/windows/
+updated versions/windows-store/
+updated versions/windows-arm64/
+updated versions/windows-wpf/
+
+# Duplicate staging inside release folders
+Final Version Releases/windows-x64/
+Final Version Releases/windows/bin/
+Final Version Releases/windows-store/payload/
+Final Version Releases/windows-store/msix-pack/
+Final Version Releases/assembly/obj/
+
+# Non-assembly platform releases (publish these to GitHub Releases instead of committing)
+Final Version Releases/windows/
+Final Version Releases/windows-arm64/
+Final Version Releases/windows-wpf/
+Final Version Releases/windows-store/
+Final Version Releases/macos/
+Final Version Releases/macos-arm64/
+Final Version Releases/linux-x64/
+Final Version Releases/linux-arm64/
+Final Version Releases/android-phone/
+Final Version Releases/android-tablet/
+Final Version Releases/electron-windows/
+Final Version Releases/html/
+Final Version Releases/react/
+Final Version Releases/react-native/
+
+# Pipeline build artifacts
+pipelines/exe/
+
+# External asset staging (integrated content lives in Assets/)
+ExternalAssets/downloads/
+ExternalAssets/unpacked/
