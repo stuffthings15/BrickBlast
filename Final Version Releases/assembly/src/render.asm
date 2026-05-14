@@ -269,6 +269,8 @@ g_fontTiny      QWORD ?
 .data
 _szFontFace     DW 'S','e','g','o','e',' ','U','I',0
 
+.code
+
 ; ============================================================
 ;  Render_CreateFonts()
 ;  Call once after the window is shown.  Creates all five

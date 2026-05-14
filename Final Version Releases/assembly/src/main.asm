@@ -53,6 +53,7 @@ EXTERN Sound_Init:PROC
 EXTERN Render_InitBackBuffer:PROC
 EXTERN Render_BeginFrame:PROC
 EXTERN Render_EndFrame:PROC
+EXTERN Render_GetDC:PROC
 EXTERN Render_CreateFonts:PROC
 EXTERN Render_DestroyFonts:PROC
 
@@ -108,6 +109,7 @@ szTitle     WORD 'B','r','i','c','k','B','l','a','s','t',':',' ','V','e','l','o'
 szMutex     WORD 'B','r','i','c','k','B','l','a','s','t','_','S','i','n','g','l','e','I','n','s','t','a','n','c','e',0
 szAlready   WORD 'B','r','i','c','k','B','l','a','s','t',' ','i','s',' ','a','l','r','e','a','d','y',' ','r','u','n','n','i','n','g','.',0
 szErrTitle  WORD 'B','r','i','c','k','B','l','a','s','t',0
+szInitFail  WORD 'C','r','e','a','t','e','W','i','n','d','o','w','E','x',' ','f','a','i','l','e','d','.',0
 
 ; ── .data? — uninitialized ───────────────────────────────────────────────────
 .data?
@@ -237,6 +239,20 @@ WinMainASM PROC
     call    Game_Init
     call    Render_CreateFonts
 
+    ; ── Init back buffer before first paint ──────────────────
+    ; Use CANVAS_W / CANVAS_H — window isn't shown yet so
+    ; GetClientRect would return a zero rect.
+    mov     rcx, [g_hwnd]
+    call    GetDC
+    mov     rbx, rax                    ; save hdc
+    mov     rcx, rbx                    ; hdc   (arg 1)
+    mov     edx, CANVAS_W               ; w     (arg 2)
+    mov     r8d, CANVAS_H               ; h     (arg 3)
+    call    Render_InitBackBuffer
+    mov     rcx, [g_hwnd]
+    mov     rdx, rbx
+    call    ReleaseDC
+
     ; ── ShowWindow + UpdateWindow ────────────────────────────
     mov     rcx, [g_hwnd]
     mov     edx, SW_SHOWDEFAULT
@@ -275,6 +291,11 @@ WinMainASM PROC
     jmp     @exit
 
 @exit_fail:
+    xor     rcx, rcx
+    lea     rdx, szInitFail
+    lea     r8,  szErrTitle
+    mov     r9d, MB_OK or MB_ICONERROR
+    call    MessageBoxW
     xor     rax, rax
 
 @exit:
@@ -346,15 +367,16 @@ WndProc PROC
     mov     rcx, rbx
     lea     rdx, _ps
     call    BeginPaint
-    mov     rdi, rax        ; save hdc
+    mov     rdi, rax        ; save window hdc
 
-    mov     rcx, rdi
+    mov     rcx, rdi        ; window hdc — Render_BeginFrame clears back buffer
     call    Render_BeginFrame
 
-    mov     rcx, rdi
+    call    Render_GetDC    ; rax = back-buffer DC
+    mov     rcx, rax        ; pass back-buffer DC to game draw code
     call    Game_OnPaint
 
-    mov     rcx, rdi
+    mov     rcx, rdi        ; window hdc
     mov     rdx, rbx        ; hwnd
     call    Render_EndFrame
 
@@ -486,8 +508,8 @@ WndProc PROC
     lea     rdx, _rc
     mov     rcx, rbx
     call    GetClientRect
-    mov     ecx, DWORD PTR [_rc+8]  ; right = width
-    mov     edx, DWORD PTR [_rc+12] ; bottom = height
+    mov     edx, DWORD PTR [_rc+8]  ; right = width  (arg 2)
+    mov     r8d, DWORD PTR [_rc+12] ; bottom = height (arg 3)
     ; Render_InitBackBuffer(hdc, w, h)
     mov     rcx, rdi
     call    Render_InitBackBuffer
